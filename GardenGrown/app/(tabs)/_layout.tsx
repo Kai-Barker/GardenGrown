@@ -2,8 +2,15 @@ import { Tabs } from 'expo-router';
 import { View, Pressable, Platform } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
-// 1. We build our custom tab bar component
+
 function CustomTabBar({ state, descriptors, navigation }: any) {
+  const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key].options;
+
+  // If the active screen has 'display: none', don't render the tab bar at all
+  if (focusedOptions?.tabBarStyle?.display === 'none') {
+    return null;
+  }
   return (
     <View
       className="flex-row items-center justify-around bg-[#A1BEA4] w-full shadow-lg"
@@ -68,16 +75,22 @@ export default function TabsLayout() {
     <Tabs
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: '#A3C4A3',
-            borderTopWidth: 0,
-            elevation: 0,
-          },
-        }}
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: '#A3C4A3',
+          borderTopWidth: 0,
+          elevation: 0,
+        },
+      }}
     >
       <Tabs.Screen name="dashboard" />
-      <Tabs.Screen name="garden" />
+      <Tabs.Screen
+        name="garden"
+        options={{
+          tabBarStyle: { display: 'none' },
+          headerShown: false,
+        }}
+      />
       <Tabs.Screen name="profile" />
     </Tabs>
   );

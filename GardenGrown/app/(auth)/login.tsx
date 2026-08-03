@@ -16,7 +16,7 @@ export default function Login() {
             {/* Texture Overlay */}
             <View pointerEvents="none" className="absolute w-full h-full z-0">
                 <Image
-                    source={require('../../assets/textures/SandTextureVertical.png')}
+                    source={require('../../assets/textures/SandTextureVertical.webp')}
                     className="w-full h-full opacity-30"
                     resizeMode="cover"
                 />
