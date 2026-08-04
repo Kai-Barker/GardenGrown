@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  Animated, 
-  PanResponder 
-} from 'react-native';
+import { View, Text, Pressable, ScrollView, Animated, PanResponder, Vibration } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { SharedValue, runOnJS } from 'react-native-reanimated';
 
-const INVENTORY_ITEMS = [
+// 1. Define our specific item type
+export type InventoryItem = {
+  id: string;
+  emoji: string;
+  name: string;
+};
+
+const INVENTORY_ITEMS: InventoryItem[] = [
   { id: '1', emoji: '🎋', name: 'Bamboo' },
   { id: '2', emoji: '🌸', name: 'Cherry Blossom' },
   { id: '3', emoji: '🍃', name: 'Leaves' },
@@ -28,35 +30,38 @@ const INVENTORY_ITEMS = [
   { id: '16', emoji: '🏺', name: 'Vase' },
 ];
 
-// Heights configuration
 const DRAWER_HEIGHT = 440;
 const PEEK_HEIGHT = 120;
-const CLOSED_TRANSLATE_Y = DRAWER_HEIGHT - PEEK_HEIGHT; // 320px down
+const CLOSED_TRANSLATE_Y = DRAWER_HEIGHT - PEEK_HEIGHT;
 
-export function GardenInventory() {
+// 2. Strongly type the props for the Drawer
+type GardenInventoryProps = {
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+  onDragStart: (item: InventoryItem, startX: number, startY: number) => void;
+  onDragEnd: (endX: number, endY: number) => void;
+};
+
+export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd }: GardenInventoryProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const isExpandedRef = useRef(isExpanded);
 
-  // Sync ref with state for gesture callbacks
   useEffect(() => {
     isExpandedRef.current = isExpanded;
   }, [isExpanded]);
 
-  // Animated Position (0 = Fully Open, CLOSED_TRANSLATE_Y = Peeking)
   const panY = useRef(new Animated.Value(CLOSED_TRANSLATE_Y)).current;
 
-  // Helper function to snap drawer open or closed
   const snapTo = (toValue: number, expandedState: boolean) => {
     Animated.spring(panY, {
       toValue,
       damping: 20,
       stiffness: 200,
-      useNativeDriver: true, // Native driver for smooth 60fps UI performance
+      useNativeDriver: true, 
     }).start();
     setIsExpanded(expandedState);
   };
 
-  // Tap handler for button
   const toggleDrawer = () => {
     if (isExpanded) {
       snapTo(CLOSED_TRANSLATE_Y, false);
@@ -65,20 +70,17 @@ export function GardenInventory() {
     }
   };
 
-  // PAN RESPONDER (Swipe Gesture Detection)
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only take over gesture if moving vertically more than 5px
         return Math.abs(gestureState.dy) > 5;
       },
       onPanResponderMove: (_, gestureState) => {
         const startY = isExpandedRef.current ? 0 : CLOSED_TRANSLATE_Y;
         let newY = startY + gestureState.dy;
 
-        // Clamping & rubber-banding
-        if (newY < 0) newY = newY * 0.2; // Resist dragging above open position
+        if (newY < 0) newY = newY * 0.2; 
         if (newY > CLOSED_TRANSLATE_Y + 40) newY = CLOSED_TRANSLATE_Y + 40;
 
         panY.setValue(newY);
@@ -88,14 +90,12 @@ export function GardenInventory() {
         const velocity = gestureState.vy;
 
         if (isExpandedRef.current) {
-          // If open, drag down or flick down to close
           if (dragDistance > 80 || velocity > 0.4) {
             snapTo(CLOSED_TRANSLATE_Y, false);
           } else {
             snapTo(0, true);
           }
         } else {
-          // If closed, drag up or flick up to open
           if (dragDistance < -80 || velocity < -0.4) {
             snapTo(0, true);
           } else {
@@ -114,13 +114,7 @@ export function GardenInventory() {
       }}
       className="absolute bottom-0 left-0 right-0 z-30"
     >
-      {/* 
-        1. DRAG HANDLE & HEADER (Attach gesture handlers here)
-        This prevents gesture conflicts with internal item scrolling
-      */}
       <View {...panResponder.panHandlers}>
-        
-        {/* GREEN PULL-TAB BUTTON */}
         <View className="items-center -mb-1 z-10">
           <Pressable 
             onPress={toggleDrawer}
@@ -134,7 +128,6 @@ export function GardenInventory() {
           </Pressable>
         </View>
 
-        {/* QUICK ACCESS TOP BAR */}
         <View className="w-full bg-[#46546B] border-t-2 border-[#4A4A4A] pt-3 pb-2 flex-row justify-around items-center px-4">
           <View className="flex-1 items-center">
             <Text className="text-2xl">🌹</Text>
@@ -148,29 +141,65 @@ export function GardenInventory() {
             <Text className="text-2xl">⛩️</Text>
           </View>
         </View>
-
       </View>
 
-      {/* 2. EXPANDABLE ITEM GRID BODY */}
       <View className="flex-1 bg-[#46546B] px-4 pt-2">
-        <ScrollView 
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
           <View className="flex-row flex-wrap justify-between">
             {INVENTORY_ITEMS.map((item) => (
-              <Pressable
-                key={item.id}
-                className="w-[22%] aspect-square bg-[#9BB49E] border border-[#374151] rounded-2xl items-center justify-center mb-3 active:scale-95"
-                onPress={() => console.log('Selected item:', item.name)}
-              >
-                <Text className="text-3xl">{item.emoji}</Text>
-              </Pressable>
+              <InventoryDraggable 
+                key={item.id} 
+                item={item} 
+                dragX={dragX} 
+                dragY={dragY} 
+                // 3. Rename the parameter so it doesn't clash with the 'item' above, and explicitly type everything
+                onDragStart={(draggedItem: InventoryItem, x: number, y: number) => {
+                  Vibration.vibrate(50); // Tactile feedback
+                  snapTo(CLOSED_TRANSLATE_Y, false); // Snap drawer shut instantly
+                  onDragStart(draggedItem, x, y); // Pass to main screen to spawn ghost
+                }}
+                onDragEnd={onDragEnd} 
+              />
             ))}
           </View>
         </ScrollView>
       </View>
-
     </Animated.View>
+  );
+}
+
+// 4. Strongly type the props for the individual draggable component
+type InventoryDraggableProps = {
+  item: InventoryItem;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+  onDragStart: (item: InventoryItem, x: number, y: number) => void;
+  onDragEnd: (x: number, y: number) => void;
+};
+
+// --- NEW GESTURE DRAGGABLE COMPONENT (Typed) ---
+function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragEnd }: InventoryDraggableProps) {
+  const pan = Gesture.Pan()
+    // Waits 250ms of holding before capturing the gesture.
+    .activateAfterLongPress(250) 
+    .onStart((e) => {
+      runOnJS(onDragStart)(item, e.absoluteX, e.absoluteY);
+      dragX.value = e.absoluteX;
+      dragY.value = e.absoluteY;
+    })
+    .onUpdate((e) => {
+      dragX.value = e.absoluteX;
+      dragY.value = e.absoluteY;
+    })
+    .onEnd((e) => {
+      runOnJS(onDragEnd)(e.absoluteX, e.absoluteY);
+    });
+
+  return (
+    <GestureDetector gesture={pan}>
+      <View className="w-[22%] aspect-square bg-[#9BB49E] border border-[#374151] rounded-2xl items-center justify-center mb-3">
+        <Text className="text-3xl">{item.emoji}</Text>
+      </View>
+    </GestureDetector>
   );
 }
