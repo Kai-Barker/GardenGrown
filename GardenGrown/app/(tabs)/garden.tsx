@@ -18,11 +18,14 @@ const COLUMNS = 8;
 const ROWS = 12;
 const TOTAL_CELLS = COLUMNS * ROWS;
 
-const screenWidth = Dimensions.get('window').width;
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const GRID_WIDTH = screenWidth - 48;
 const INNER_GRID_WIDTH = GRID_WIDTH - 4; 
 const CELL_SIZE = INNER_GRID_WIDTH / COLUMNS; 
 const GRID_HEIGHT = (CELL_SIZE * ROWS) + 4;
+
+// The Y-coordinate threshold for deletion (approx bottom 150px of the screen)
+const DELETE_THRESHOLD = screenHeight - 150;
 
 type PlantItem = {
   id: string;
@@ -32,8 +35,8 @@ type PlantItem = {
   isTall: boolean;
 };
 
-// --- 2. EXISTING GRID ITEM (Unchanged) ---
-function DraggablePlant({ item, onSnap, setScrollEnabled, occupiedCells }: any) {
+// --- 2. CRASH-SAFE DRAGGABLE PLANT ---
+function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCells, zoomScale }: any) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
   const isDragging = useSharedValue(false);
@@ -42,7 +45,9 @@ function DraggablePlant({ item, onSnap, setScrollEnabled, occupiedCells }: any) 
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      position: 'absolute', width: CELL_SIZE, height: CELL_SIZE,
+      position: 'absolute', 
+      width: CELL_SIZE, 
+      height: CELL_SIZE,
       transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
       zIndex: interpolate(isDragging.value ? 1 : 0, [0, 1], [item.row, 999]), 
     };
@@ -56,12 +61,22 @@ function DraggablePlant({ item, onSnap, setScrollEnabled, occupiedCells }: any) 
       startY.value = translateY.value;
     })
     .onUpdate((event) => {
-      translateX.value = startX.value + event.translationX;
-      translateY.value = startY.value + event.translationY;
+      const currentScale = (zoomScale && zoomScale.value > 0) ? zoomScale.value : 1;
+      
+      translateX.value = startX.value + (event.translationX / currentScale);
+      translateY.value = startY.value + (event.translationY / currentScale);
     })
-    .onEnd(() => {
+    .onEnd((event) => {
       isDragging.value = false;
       runOnJS(setScrollEnabled)(true); 
+
+      // --- NEW: DELETION CHECK ---
+      // If dropped near the bottom of the screen (the inventory drawer)
+      if (event.absoluteY > DELETE_THRESHOLD) {
+        runOnJS(Vibration.vibrate)([0, 50, 100, 50]); // Distinct "delete" vibration pattern
+        runOnJS(onDelete)(item.id);
+        return; // Exit early so it doesn't try to snap
+      }
 
       const currentX = translateX.value;
       const currentY = translateY.value;
@@ -99,7 +114,7 @@ function DraggablePlant({ item, onSnap, setScrollEnabled, occupiedCells }: any) 
   );
 }
 
-// --- 3. THE MAIN SCREEN ---
+// --- 3. MAIN GARDEN SCREEN ---
 export default function GardenScreen() {
   const router = useRouter();
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
@@ -108,8 +123,19 @@ export default function GardenScreen() {
   const [activeGhost, setActiveGhost] = useState<any>(null);
   const activeDragX = useSharedValue(0);
   const activeDragY = useSharedValue(0);
-  
-  // Reference to measure grid boundaries
+
+  // Zoom Tracking Values with Safe Fallbacks
+  const zoomScale = useSharedValue(1);
+  const zoomScaleRef = useRef(1);
+
+  const handleScroll = (e: any) => {
+    const currentScale = e?.nativeEvent?.zoomScale;
+    if (currentScale && currentScale > 0) {
+      zoomScale.value = currentScale;
+      zoomScaleRef.current = currentScale;
+    }
+  };
+
   const gridRef = useRef<View>(null);
 
   const [placedItems, setPlacedItems] = useState<PlantItem[]>([
@@ -129,37 +155,39 @@ export default function GardenScreen() {
     setPlacedItems(prev => prev.map(item => item.id === id ? { ...item, col: newCol, row: newRow } : item));
   };
 
-  // --- NEW: CROSS-SCREEN DRAG LOGIC ---
+  // --- NEW: DELETE HANDLER ---
+  const handleDelete = (id: string) => {
+    setPlacedItems(prev => prev.filter(item => item.id !== id));
+  };
+
   const handleInventoryDragStart = (item: any) => {
-    setActiveGhost(item); // Mounts the ghost item on the screen
+    setActiveGhost(item);
   };
 
   const handleInventoryDragEnd = (absoluteX: number, absoluteY: number) => {
-    // 1. Measure the exact position of the Grid on the screen
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
-      
-      // 2. Check if the drop coordinates are inside the Grid bounds
+      if (!width || !height) return;
+
       if (
         absoluteX >= pageX && absoluteX <= pageX + width &&
         absoluteY >= pageY && absoluteY <= pageY + height
       ) {
-        // 3. Convert absolute screen coordinates to grid row/col
+        const currentZoom = zoomScaleRef.current || 1;
+        const scaledCellSize = CELL_SIZE * currentZoom;
+
         const relativeX = absoluteX - pageX;
         const relativeY = absoluteY - pageY;
         
-        let targetCol = Math.floor(relativeX / CELL_SIZE);
-        let targetRow = Math.floor(relativeY / CELL_SIZE);
+        let targetCol = Math.floor(relativeX / scaledCellSize);
+        let targetRow = Math.floor(relativeY / scaledCellSize);
         
-        // Safety clamp
         targetCol = Math.max(0, Math.min(targetCol, COLUMNS - 1));
         targetRow = Math.max(0, Math.min(targetRow, ROWS - 1));
 
-        // 4. Check collisions
         if (occupiedCells[`${targetCol},${targetRow}`]) {
           Vibration.vibrate([0, 50, 50, 50]); 
         } else {
-          // 5. Success! Add the item
-          const isTallItem = ['Tree', 'Pine', 'Torii'].includes(activeGhost.name);
+          const isTallItem = ['Tree', 'Pine', 'Torii'].includes(activeGhost?.name || '');
           setPlacedItems(prev => [...prev, {
             id: Date.now().toString(),
             emoji: activeGhost.emoji,
@@ -169,37 +197,33 @@ export default function GardenScreen() {
           }]);
         }
       }
-      
-      // Clear the ghost item regardless of success/fail
       setActiveGhost(null);
     });
   };
 
-  // Ghost Item Styling (Moves dynamically with finger)
   const ghostAnimatedStyle = useAnimatedStyle(() => ({
     position: 'absolute',
     left: 0,
     top: 0,
-    // Offset slightly so the emoji renders *above* the user's finger, making it easier to aim
     transform: [
       { translateX: activeDragX.value - (CELL_SIZE / 2) },
       { translateY: activeDragY.value - CELL_SIZE }
     ],
     zIndex: 9999,
-    pointerEvents: 'none', // Prevents the ghost from intercepting its own touch event
+    pointerEvents: 'none',
   }));
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-[#F4EFE6]">
         
-        {/* The Global Ghost Item */}
+        {/* Global Ghost Item Layer */}
         {activeGhost && (
           <Animated.View style={ghostAnimatedStyle}>
             <Text style={{ 
               fontSize: ['Tree', 'Pine', 'Torii'].includes(activeGhost.name) ? CELL_SIZE * 1.5 : CELL_SIZE * 0.7,
               textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 4,
-              opacity: 0.8 // Slightly transparent to indicate it's not placed yet
+              opacity: 0.8
             }}>
               {activeGhost.emoji}
             </Text>
@@ -226,12 +250,18 @@ export default function GardenScreen() {
           <View className="flex-1 z-0 mt-4 mb-4">
             <ScrollView
               scrollEnabled={isScrollEnabled} 
-              maximumZoomScale={3} minimumZoomScale={1} bouncesZoom={true} centerContent={true}
-              showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
+              maximumZoomScale={3} 
+              minimumZoomScale={1} 
+              bouncesZoom={true} 
+              centerContent={true}
+              showsHorizontalScrollIndicator={false} 
+              showsVerticalScrollIndicator={false}
               contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
             >
               <View 
-                ref={gridRef} // <-- NEW: We attach the ref here to measure the grid
+                ref={gridRef}
                 style={{ width: GRID_WIDTH, height: GRID_HEIGHT }}
                 className="bg-[#EFEAE1]/50 border-2 border-[#4A4A4A]/40 rounded-lg shadow-sm relative"
               >
@@ -245,9 +275,11 @@ export default function GardenScreen() {
                   <DraggablePlant 
                     key={item.id} 
                     item={item} 
-                    onSnap={handleSnap} 
+                    onSnap={handleSnap}
+                    onDelete={handleDelete} // Passed the new delete function down
                     setScrollEnabled={setIsScrollEnabled}
                     occupiedCells={occupiedCells} 
+                    zoomScale={zoomScale} 
                   />
                 ))}
               </View>
