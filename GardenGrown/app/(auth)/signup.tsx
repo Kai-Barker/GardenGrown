@@ -1,14 +1,21 @@
+import React, { useState } from 'react';
 import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { AuthInput, AuthButton, AuthDivider } from '../../components/AuthComponents';
+import { AuthButton, AuthDivider } from '../../components/AuthComponents';
+import FormInput from '../../components/FormInput'; 
 
 export default function SignUp() {
   const router = useRouter();
 
+  // State to control your inputs
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
   const handleSignUp = () => {
-    // Navigate to the dashboard upon account creation
-    router.replace('/(tabs)/dashboard');
+    // Navigate to the login screen upon account creation
+    router.replace('/(auth)/login');
   };
 
   return (
@@ -38,22 +45,28 @@ export default function SignUp() {
               <View className="w-28 h-1.5 bg-[#4A4A4A] rounded-full" />
             </View>
 
-            {/* Form Inputs */}
-            <AuthInput 
+            {/* Updated Form Inputs */}
+            <FormInput 
               label="Username" 
               placeholder="Choose a username" 
               autoCapitalize="none"
+              value={username}
+              onChangeText={setUsername}
             />
-            <AuthInput 
+            <FormInput 
               label="Email" 
               placeholder="Enter your email" 
               keyboardType="email-address"
               autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
             />
-            <AuthInput 
+            <FormInput 
               label="Password" 
               placeholder="Create a password" 
-              secureTextEntry 
+              isPassword={true} 
+              value={password}
+              onChangeText={setPassword}
             />
 
             {/* Actions */}

@@ -11,9 +11,10 @@ import Animated, {
   runOnJS,
   interpolate
 } from 'react-native-reanimated';
-import { GardenInventory } from '../../components/GardenInventory';
+import { GardenInventory } from '../components/GardenInventory';
 
-// --- 1. GRID CONFIGURATION ---
+/* CONFIGURATION & TYPES
+=================================================== */
 const COLUMNS = 8;
 const ROWS = 12;
 const TOTAL_CELLS = COLUMNS * ROWS;
@@ -35,7 +36,8 @@ type PlantItem = {
   isTall: boolean;
 };
 
-// --- 2. CRASH-SAFE DRAGGABLE PLANT ---
+/* DRAGGABLE PLANT COMPONENT
+=================================================== */
 function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCells, zoomScale }: any) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
@@ -70,12 +72,11 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
       isDragging.value = false;
       runOnJS(setScrollEnabled)(true); 
 
-      // --- NEW: DELETION CHECK ---
-      // If dropped near the bottom of the screen (the inventory drawer)
+      // Deletion Check (Bottom Screen Zone)
       if (event.absoluteY > DELETE_THRESHOLD) {
-        runOnJS(Vibration.vibrate)([0, 50, 100, 50]); // Distinct "delete" vibration pattern
+        runOnJS(Vibration.vibrate)([0, 50, 100, 50]); 
         runOnJS(onDelete)(item.id);
-        return; // Exit early so it doesn't try to snap
+        return; 
       }
 
       const currentX = translateX.value;
@@ -114,20 +115,27 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
   );
 }
 
-// --- 3. MAIN GARDEN SCREEN ---
+/* MAIN GARDEN SCREEN
+=================================================== */
 export default function GardenScreen() {
-  const router = useRouter();
+  // STATES
+  const [currentGarden, setCurrentGarden] = useState('Raked Sand');
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
-  
-  // Ghost Item State
   const [activeGhost, setActiveGhost] = useState<any>(null);
+  const [placedItems, setPlacedItems] = useState<PlantItem[]>([
+    { id: '1', emoji: '🍄', col: 2, row: 4, isTall: false },
+    { id: '2', emoji: '🪷', col: 5, row: 8, isTall: false },
+  ]);
+
+  //  REFS & SHARED VALUES
+  const router = useRouter();
+  const gridRef = useRef<View>(null);
+  const zoomScaleRef = useRef(1);
   const activeDragX = useSharedValue(0);
   const activeDragY = useSharedValue(0);
-
-  // Zoom Tracking Values with Safe Fallbacks
   const zoomScale = useSharedValue(1);
-  const zoomScaleRef = useRef(1);
 
+  //  EFFECTS & RELATED HANDLERS
   const handleScroll = (e: any) => {
     const currentScale = e?.nativeEvent?.zoomScale;
     if (currentScale && currentScale > 0) {
@@ -136,13 +144,7 @@ export default function GardenScreen() {
     }
   };
 
-  const gridRef = useRef<View>(null);
-
-  const [placedItems, setPlacedItems] = useState<PlantItem[]>([
-    { id: '1', emoji: '🍄', col: 2, row: 4, isTall: false },
-    { id: '2', emoji: '🪷', col: 5, row: 8, isTall: false },
-  ]);
-
+  //  MEMOS & GARDEN HANDLERS
   const occupiedCells = useMemo(() => {
     const map: Record<string, string> = {};
     placedItems.forEach(item => {
@@ -155,7 +157,6 @@ export default function GardenScreen() {
     setPlacedItems(prev => prev.map(item => item.id === id ? { ...item, col: newCol, row: newRow } : item));
   };
 
-  // --- NEW: DELETE HANDLER ---
   const handleDelete = (id: string) => {
     setPlacedItems(prev => prev.filter(item => item.id !== id));
   };
@@ -213,11 +214,13 @@ export default function GardenScreen() {
     pointerEvents: 'none',
   }));
 
+  
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-[#F4EFE6]">
         
-        {/* Global Ghost Item Layer */}
+        {/* Global Ghost Item Overlay Layer */}
         {activeGhost && (
           <Animated.View style={ghostAnimatedStyle}>
             <Text style={{ 
@@ -230,24 +233,27 @@ export default function GardenScreen() {
           </Animated.View>
         )}
 
+        {/* Sand Texture Background */}
         <View pointerEvents="none" className="absolute inset-0 z-0">
-          <Image source={require('../../assets/textures/SandTextureVertical.webp')} className="w-full h-full opacity-30" resizeMode="cover" />
+          <Image source={require('../assets/textures/SandTextureVertical.webp')} className="w-full h-full opacity-30" resizeMode="cover" />
         </View>
 
         <SafeAreaView className="flex-1 justify-between" edges={['top']}>
           
+          {/* Screen Header */}
           <View className="px-6 pt-2 z-10">
             <Pressable onPress={() => router.back()} className="flex-row items-center mb-2 active:opacity-60">
               <MaterialCommunityIcons name="chevron-left" size={28} color="#4A4A4A" />
               <Text className="font-zenmaru text-2xl text-[#4A4A4A]">Dashboard</Text>
             </Pressable>
             <Pressable className="flex-row items-center gap-x-2">
-              <Text className="font-zenmaru-bold text-4xl text-[#4A4A4A]">Raked Sand</Text>
+              <Text className="font-zenmaru-bold text-4xl text-[#4A4A4A]">{currentGarden}</Text>
               <MaterialCommunityIcons name="chevron-down" size={32} color="#4A4A4A" />
             </Pressable>
           </View>
 
-          <View className="flex-1 z-0 mt-4 mb-4">
+          {/* Canvas Scroll Area */}
+          <View className="flex-1 z-0 mt-2 mb-2">
             <ScrollView
               scrollEnabled={isScrollEnabled} 
               maximumZoomScale={3} 
@@ -256,27 +262,36 @@ export default function GardenScreen() {
               centerContent={true}
               showsHorizontalScrollIndicator={false} 
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+              contentContainerStyle={{ 
+                flexGrow: 1, 
+                justifyContent: 'flex-start', 
+                alignItems: 'center',
+                paddingTop: 16,
+                paddingBottom: 40
+              }}
               onScroll={handleScroll}
               scrollEventThrottle={16}
             >
+              {/* Garden Grid Surface */}
               <View 
                 ref={gridRef}
                 style={{ width: GRID_WIDTH, height: GRID_HEIGHT }}
                 className="bg-[#EFEAE1]/50 border-2 border-[#4A4A4A]/40 rounded-lg shadow-sm relative"
               >
+                {/* Background Grid Cells */}
                 <View className="absolute inset-0 flex-row flex-wrap pointer-events-none">
                   {Array.from({ length: TOTAL_CELLS }).map((_, index) => (
                     <View key={`cell-${index}`} style={{ width: '12.5%', height: CELL_SIZE }} className="border border-[#4A4A4A]/10" />
                   ))}
                 </View>
 
+                {/* Placed Plant Entities */}
                 {placedItems.map(item => (
                   <DraggablePlant 
                     key={item.id} 
                     item={item} 
                     onSnap={handleSnap}
-                    onDelete={handleDelete} // Passed the new delete function down
+                    onDelete={handleDelete}
                     setScrollEnabled={setIsScrollEnabled}
                     occupiedCells={occupiedCells} 
                     zoomScale={zoomScale} 
@@ -286,6 +301,7 @@ export default function GardenScreen() {
             </ScrollView>
           </View>
 
+          {/* Bottom Inventory Drawer */}
           <GardenInventory 
             dragX={activeDragX} 
             dragY={activeDragY} 

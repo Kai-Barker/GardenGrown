@@ -1,9 +1,11 @@
-import { View, Text, ScrollView, Image } from 'react-native';
+import { View, Text, ScrollView, Image, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import StatCard from '../../components/DashboardStatCard';
 import GardenCard from '../../components/DashboardGardenCard';
+import { useRouter } from 'expo-router';
 
 export default function Dashboard() {
+  const router = useRouter();
   return (
     <View className="flex-1 bg-[#EFEAE1]">
       {/* Texture Overlay */}
@@ -50,13 +52,17 @@ export default function Dashboard() {
               />
             </View>
             <View className="w-full h-[25vh] my-1">
-              <GardenCard
-                title="Current Garden"
-                gardenName="Raked Sand"
-                currentIndex={0}
-                totalCards={3}
-                onPressEnter={() => console.log('Entering garden...')}
-              />
+              <Pressable
+                onPress={() => router.push('/garden')}
+              >
+                <GardenCard
+                  title="Current Garden"
+                  gardenName="Raked Sand"
+                  currentIndex={0}
+                  totalCards={3}
+                  onPressEnter={() => console.log('Entering garden...')}
+                />
+              </Pressable>
             </View>
             {/* STAT CARD 3 & 4: Each spans 2 Columns (48% Width) */}
             <View className="w-[48%] h-[20vh]">

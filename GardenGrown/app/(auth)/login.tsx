@@ -1,13 +1,18 @@
+import React, { useState } from 'react';
 import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { AuthInput, AuthButton, AuthDivider } from '../../components/AuthComponents';
+// Removed AuthInput from here, kept Button and Divider
+import { AuthButton, AuthDivider } from '../../components/AuthComponents'; 
+// Import your new component (adjust the path/filename if necessary)
+import FormInput from '../../components/FormInput'; 
 
 export default function Login() {
     const router = useRouter();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
 
     const handleLogin = () => {
-        // Navigate to the dashboard upon authentication
         router.replace('/(tabs)/dashboard');
     };
 
@@ -38,17 +43,21 @@ export default function Login() {
                             <View className="w-24 h-1.5 bg-[#4A4A4A] rounded-full" />
                         </View>
 
-                        {/* Form Inputs */}
-                        <AuthInput
+                        {/* Updated Form Inputs */}
+                        <FormInput
                             label="Email"
                             placeholder="Enter your email"
                             keyboardType="email-address"
                             autoCapitalize="none"
+                            value={email}
+                            onChangeText={setEmail}
                         />
-                        <AuthInput
+                        <FormInput
                             label="Password"
                             placeholder="Enter your password"
-                            secureTextEntry
+                            isPassword={true}
+                            value={password}
+                            onChangeText={setPassword}
                         />
 
                         {/* Actions */}

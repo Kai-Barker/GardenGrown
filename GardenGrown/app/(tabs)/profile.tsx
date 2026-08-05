@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Image, Pressable, Switch, KeyboardAvoidingView,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker'; 
-import ProfileField from '../../components/FormInput';
+import FormInput from '../../components/FormInput';
 
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
@@ -90,13 +90,13 @@ export default function ProfileScreen() {
             </View>
 
             {/* Basic Info Fields (Using upgraded component) */}
-            <ProfileField
+            <FormInput
               label="Username"
               value={username}
               onChangeText={setUsername}
               placeholder="ZenGardener123"
             />
-            <ProfileField
+            <FormInput
               label="Email"
               value={email}
               onChangeText={setEmail}
@@ -111,14 +111,14 @@ export default function ProfileScreen() {
               Change Password?
             </Text>
             
-            <ProfileField
+            <FormInput
               label="Current Password"
               value={currentPassword}
               onChangeText={setCurrentPassword}
               isPassword={true}
               placeholder="Enter current password"
             />
-            <ProfileField
+            <FormInput
               label="New Password"
               value={newPassword}
               onChangeText={setNewPassword}

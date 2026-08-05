@@ -7,7 +7,7 @@ interface ProfileFieldProps extends TextInputProps {
   isPassword?: boolean;
 }
 
-export default function ProfileField({ 
+export default function FormInput({ 
   label, 
   value, 
   onChangeText, 
