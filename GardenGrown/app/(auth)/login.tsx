@@ -1,19 +1,38 @@
 import React, { useState } from 'react';
-import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-// Removed AuthInput from here, kept Button and Divider
 import { AuthButton, AuthDivider } from '../../components/AuthComponents'; 
-// Import your new component (adjust the path/filename if necessary)
 import FormInput from '../../components/FormInput'; 
+
+// --- NEW FIREBASE IMPORTS ---
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../../firebase'; 
 
 export default function Login() {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
-    const handleLogin = () => {
-        router.replace('/(tabs)/dashboard');
+    // --- UPDATED HANDLER ---
+    const handleLogin = async () => {
+        // 1. Basic validation
+        if (!email || !password) {
+            Alert.alert('Hold up!', 'Please enter your email and password.');
+            return;
+        }
+
+        try {
+            // 2. Tell Firebase to log the user in
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            console.log('Successfully logged in:', userCredential.user.email);
+            
+            // 3. Navigate to dashboard on success
+            router.replace('/(tabs)/dashboard');
+        } catch (error: any) {
+            // 4. Handle errors (wrong password, user not found, etc.)
+            Alert.alert('Login Failed', error.message);
+        }
     };
 
     return (
@@ -63,7 +82,8 @@ export default function Login() {
                         {/* Actions */}
                         <View className="mt-4 w-[60%] self-center">
                             <AuthButton title="Log In" onPress={handleLogin} />
-                            <AuthButton title="Google Sign in" variant="secondary" onPress={handleLogin} />
+                            {/* Leaving this here for when you setup Google Auth later! */}
+                            <AuthButton title="Google Sign in" variant="secondary" onPress={() => console.log('Google sign in coming soon')} />
                         </View>
 
                         {/* Footer / Switch Auth */}

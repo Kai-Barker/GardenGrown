@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Image, Pressable, Switch, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, Image, Pressable, Switch, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; 
+import * as ImagePicker from 'expo-image-picker';
+import ThickDivider from '@/components/ThickDivider';
 import FormInput from '../../components/FormInput';
+import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
 
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
@@ -11,12 +15,62 @@ export default function ProfileScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [notifications, setNotifications] = useState(true);
-  
+
   // State to hold the local image URI
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const ThickDivider = () => (
-    <View className="h-1 bg-[#4A4A4A] rounded-full w-full my-7" />
-  );
+
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          setEmail(user.email || '');
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            setUsername(userDoc.data().username || 'ZenGardener123');
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUserData();
+  }, []);
+
+  const handleUpdatePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      Alert.alert('Missing Fields', 'Please enter both your current and new password.');
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (user && user.email) {
+      try {
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+        await updatePassword(user, newPassword);
+        Alert.alert('Success!', 'Your password has been updated.');
+        setCurrentPassword('');
+        setNewPassword('');
+      } catch (error: any) {
+        Alert.alert('Update Failed', error.message);
+      }
+    }
+
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error: any) {
+      Alert.alert('Sign Out Error', error.message);
+    }
+  };
 
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
@@ -62,20 +116,20 @@ export default function ProfileScreen() {
                 <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
                 {/* 2. Main Card Layer */}
                 <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl items-center justify-center overflow-hidden w-full h-full">
-                   {profileImage ? (
-                     <Image 
-                       source={{ uri: profileImage }} 
-                       className="w-full h-full" 
-                       resizeMode="cover" 
-                     />
-                   ) : (
-                     <MaterialCommunityIcons name="image-outline" size={56} color="#A3C4A3" />
-                   )}
+                  {profileImage ? (
+                    <Image
+                      source={{ uri: profileImage }}
+                      className="w-full h-full"
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <MaterialCommunityIcons name="image-outline" size={56} color="#A3C4A3" />
+                  )}
                 </View>
               </View>
-              
+
               {/* Edit Button */}
-              <Pressable 
+              <Pressable
                 onPress={pickImage}
                 className="relative w-16 h-16 active:opacity-80"
               >
@@ -110,7 +164,7 @@ export default function ProfileScreen() {
             <Text className="font-zenmaru-bold text-3xl text-[#4A4A4A] mb-5">
               Change Password?
             </Text>
-            
+
             <FormInput
               label="Current Password"
               value={currentPassword}
@@ -126,17 +180,28 @@ export default function ProfileScreen() {
               placeholder="Enter new password"
             />
 
+            {/* Update Password Button */}
+            <Pressable
+              onPress={handleUpdatePassword}
+              className="relative w-full mt-2 active:opacity-80"
+            >
+              <View className="absolute w-full h-full bg-[#4A4A4A] rounded-xl top-1 left-1" />
+              <View className="relative bg-[#A3C4A3] px-6 py-4 rounded-xl border-2 border-[#4A4A4A] items-center">
+                <Text className="font-zenmaru-bold text-xl text-[#4A4A4A]">Update Password</Text>
+              </View>
+            </Pressable>
+
             <ThickDivider />
 
             {/* Settings Section */}
-            <View className="relative w-full mt-2 mb-4">
+            <View className="relative w-full mt-2 mb-8">
               <View className="absolute w-full h-full bg-[#4A4A4A] rounded-xl top-1 left-1" />
               <View className="relative flex-row items-center justify-between px-4 py-3 bg-[#545E75] border-2 border-[#4A4A4A] rounded-xl w-full">
                 <Text className="font-zenmaru text-xl text-[#A3C4A3]">
                   Notifications
                 </Text>
                 <Switch
-                  trackColor={{ false: '#374151', true: '#A3C4A3' }} 
+                  trackColor={{ false: '#374151', true: '#A3C4A3' }}
                   thumbColor={Platform.OS === 'ios' ? undefined : '#F4EFE6'}
                   ios_backgroundColor="#374151"
                   onValueChange={setNotifications}
@@ -144,6 +209,17 @@ export default function ProfileScreen() {
                 />
               </View>
             </View>
+
+            {/* Logout Button */}
+            <Pressable
+              onPress={handleSignOut}
+              className="relative w-[60%] self-center active:opacity-80 mt-4"
+            >
+              <View className="absolute w-full h-full bg-[#4A4A4A] rounded-xl top-1 left-1" />
+              <View className="relative bg-[#D9534F] px-6 py-3 rounded-xl border-2 border-[#4A4A4A] items-center">
+                <Text className="text-white font-zenmaru-bold text-lg">Log Out</Text>
+              </View>
+            </Pressable>
 
           </ScrollView>
         </KeyboardAvoidingView>

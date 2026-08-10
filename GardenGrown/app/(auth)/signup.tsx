@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Image, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AuthButton, AuthDivider } from '../../components/AuthComponents';
 import FormInput from '../../components/FormInput'; 
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
 
 export default function SignUp() {
   const router = useRouter();
@@ -13,9 +16,30 @@ export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSignUp = () => {
-    // Navigate to the login screen upon account creation
-    router.replace('/(auth)/login');
+  const handleSignUp = async () => {
+    if (!email || !password || !username) {
+      Alert.alert('Hold up!', 'Please fill out all fields.');
+      return;
+    }
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      await updateProfile(user, {
+        displayName: username
+      });
+      await setDoc(doc(db, 'users', user.uid), {
+        username: username,
+        email: email,
+        createdAt: new Date().toISOString(),
+      });
+      
+      console.log('Successfully created user & database record for:', username);
+      router.replace('/(tabs)/dashboard');
+      
+    } catch (error: any) {
+      Alert.alert('Sign Up Failed', error.message);
+    }
   };
 
   return (
