@@ -4,7 +4,6 @@ import { useFonts } from 'expo-font';
 import { ZenLoop_400Regular } from '@expo-google-fonts/zen-loop';
 import { ZenMaruGothic_400Regular, ZenMaruGothic_700Bold } from '@expo-google-fonts/zen-maru-gothic';
 import * as SplashScreen from 'expo-splash-screen';
-
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 

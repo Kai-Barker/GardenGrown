@@ -23,7 +23,7 @@ export default function StatCard({ iconName, heading, statValue }: StatCardProps
                 </View>
 
                 <View className="mt-4 w-full">
-                    <Text className="font-zenmaru text-[#FADBB3] text-base mb-2">
+                    <Text className="font-zenmaru text-[#FADBB3] text-[16px] mb-2">
                         {heading}
                     </Text>
                     <View className="h-[65px] justify-center -mt-2">
@@ -31,7 +31,7 @@ export default function StatCard({ iconName, heading, statValue }: StatCardProps
                             numberOfLines={1}
                             adjustsFontSizeToFit
                             minimumFontScale={0.5}
-                            className="font-zenloop text-[#A3C4A3] text-6xl"
+                            className="font-zenloop text-[#A3C4A3] text-5xl"
                         >
                             {statValue}
                         </Text>

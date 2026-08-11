@@ -29,10 +29,10 @@ export default function GardenCard({
       <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl p-3 flex-col justify-between h-full w-full">
         
         <View>
-          <Text className="font-zenmaru text-[#FADBB3] text-base leading-tight">
+          <Text className="font-zenmaru text-[#FADBB3] text-2xl leading-tight">
             {title}
           </Text>
-          <Text className="font-zenloop text-gray-300 text-2xl -mt-1">
+          <Text className="font-zenloop text-gray-300 text-3xl -mt-1">
             {gardenName}
           </Text>
         </View>
@@ -47,7 +47,7 @@ export default function GardenCard({
           ) : (
             <View className="items-center justify-center py-2 px-3 rounded-xl border-2 border-dashed border-[#A3C4A3]/40 bg-[#4A4A4A]/20 w-5/6 h-16">
               <MaterialCommunityIcons name="image-filter-vintage" size={22} color="#A3C4A3" />
-              <Text className="font-zenloop text-[#A3C4A3]/80 text-base -mt-1">
+              <Text className="font-zenloop text-[#A3C4A3]/80 text-2xl -mt-1">
                 Garden Snapshot Preview
               </Text>
             </View>
@@ -56,7 +56,7 @@ export default function GardenCard({
 
         <View className="items-center">
           <Pressable onPress={onPressEnter} className="active:opacity-75">
-            <Text className="font-zenloop text-[#A3C4A3] text-2xl leading-none mb-1.5">
+            <Text className="font-zenloop text-[#A3C4A3] text-4xl leading-none mb-1.5">
               -- Enter Garden --
             </Text>
           </Pressable>

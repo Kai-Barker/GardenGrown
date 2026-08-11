@@ -5,12 +5,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import ThickDivider from '@/components/ThickDivider';
 import FormInput from '../../components/FormInput';
-import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
+  const [savedUsername, setSavedUsername] = useState('');
   const [email, setEmail] = useState('zen@example.com');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -30,7 +31,9 @@ export default function ProfileScreen() {
           const userDocRef = doc(db, 'users', user.uid);
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-            setUsername(userDoc.data().username || 'ZenGardener123');
+            const fetchedName = userDoc.data().Username || 'ZenGardener123';
+            setUsername(fetchedName);
+            setSavedUsername(fetchedName);
           }
         }
       } catch (error) {
@@ -82,6 +85,41 @@ export default function ProfileScreen() {
 
     if (!result.canceled) {
       setProfileImage(result.assets[0].uri);
+    }
+  };
+  const handleUsernameBlur = async () => {
+    const trimmedName = username.trim();
+
+    if (!trimmedName) {
+      setUsername(savedUsername);
+      return;
+    }
+
+    if (trimmedName === savedUsername) {
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (user) {
+      try {
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          Username: trimmedName,
+        });
+
+
+        await updateProfile(user, {
+          displayName: trimmedName,
+        });
+
+
+        setSavedUsername(trimmedName);
+        console.log('Username updated to:', trimmedName);
+        Alert.alert("Username Updated");
+      } catch (error: any) {
+        Alert.alert('Update Failed', 'Could not save username: ' + error.message);
+        setUsername(savedUsername);
+      }
     }
   };
 
@@ -143,19 +181,22 @@ export default function ProfileScreen() {
 
             </View>
 
-            {/* Basic Info Fields (Using upgraded component) */}
+            {/* Basic Info Fields */}
             <FormInput
               label="Username"
               value={username}
               onChangeText={setUsername}
+              onBlur={handleUsernameBlur}
               placeholder="ZenGardener123"
             />
+            {/* Email usually shouldn't be editable here unless you add a specific re-auth flow for changing emails, so we can make it read-only or just a standard input */}
             <FormInput
               label="Email"
               value={email}
               onChangeText={setEmail}
               placeholder="zen@example.com"
               keyboardType="email-address"
+              readOnly
             />
 
             <ThickDivider />
