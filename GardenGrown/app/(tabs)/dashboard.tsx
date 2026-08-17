@@ -4,8 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import StatCard from '../../components/DashboardStatCard';
 import GardenCard from '../../components/DashboardGardenCard';
 import { useRouter } from 'expo-router';
-
-// --- FIREBASE IMPORTS ---
 import { auth, db } from '../../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
@@ -23,7 +21,7 @@ export default function Dashboard() {
     gardenedSince: 'Just now'
   });
 
-  // Storing as an array makes it modular for a future carousel
+  // Storing as an array to allow for multiple gardens later
   const [gardens, setGardens] = useState<any[]>([]);
 
   // --- FETCH DATA ---
@@ -125,7 +123,7 @@ export default function Dashboard() {
         >
           <View className="flex-row flex-wrap justify-between gap-y-3">
 
-            {/* UPDATED HEADER FONTS HERE */}
+            {/* HEADER */}
             <View className="w-full mb-2">
               <Text className="font-zenmaru-bold text-5xl text-[#4A4A4A] mb-1 leading-tight">
                 Welcome Back
