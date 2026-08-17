@@ -1,8 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { View, Text, Pressable, Image, ScrollView, Dimensions, Vibration } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { View, Text, Pressable, Image, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { 
   useSharedValue, 
@@ -11,7 +10,10 @@ import Animated, {
   runOnJS,
   interpolate
 } from 'react-native-reanimated';
-import { GardenInventory } from '../components/GardenInventory';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { GardenInventory, INVENTORY_ITEMS } from '../components/GardenInventory';
+import { db, auth } from '../firebase';
+import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 
 /* CONFIGURATION & TYPES
 =================================================== */
@@ -25,15 +27,16 @@ const INNER_GRID_WIDTH = GRID_WIDTH - 4;
 const CELL_SIZE = INNER_GRID_WIDTH / COLUMNS; 
 const GRID_HEIGHT = (CELL_SIZE * ROWS) + 4;
 
-// The Y-coordinate threshold for deletion (approx bottom 150px of the screen)
 const DELETE_THRESHOLD = screenHeight - 150;
 
 type PlantItem = {
   id: string;
-  emoji: string;
+  image: any; 
   col: number;
   row: number;
-  isTall: boolean;
+  isTall?: boolean;
+  gridWidth?: number;
+  gridHeight?: number;
 };
 
 /* DRAGGABLE PLANT COMPONENT
@@ -45,11 +48,14 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
 
+  const itemWidth = item.gridWidth || 1;
+  const itemHeight = item.gridHeight || 1;
+
   const animatedStyle = useAnimatedStyle(() => {
     return {
       position: 'absolute', 
-      width: CELL_SIZE, 
-      height: CELL_SIZE,
+      width: CELL_SIZE * itemWidth, 
+      height: CELL_SIZE * itemHeight,
       transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
       zIndex: interpolate(isDragging.value ? 1 : 0, [0, 1], [item.row, 999]), 
     };
@@ -64,7 +70,6 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
     })
     .onUpdate((event) => {
       const currentScale = (zoomScale && zoomScale.value > 0) ? zoomScale.value : 1;
-      
       translateX.value = startX.value + (event.translationX / currentScale);
       translateY.value = startY.value + (event.translationY / currentScale);
     })
@@ -72,7 +77,6 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
       isDragging.value = false;
       runOnJS(setScrollEnabled)(true); 
 
-      // Deletion Check (Bottom Screen Zone)
       if (event.absoluteY > DELETE_THRESHOLD) {
         runOnJS(Vibration.vibrate)([0, 50, 100, 50]); 
         runOnJS(onDelete)(item.id);
@@ -84,12 +88,19 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
 
       let newCol = Math.round(currentX / CELL_SIZE);
       let newRow = Math.round(currentY / CELL_SIZE);
-      newCol = Math.max(0, Math.min(newCol, COLUMNS - 1));
-      newRow = Math.max(0, Math.min(newRow, ROWS - 1));
+      newCol = Math.max(0, Math.min(newCol, COLUMNS - itemWidth));
+      newRow = Math.max(0, Math.min(newRow, ROWS - itemHeight));
 
-      const cellKey = `${newCol},${newRow}`;
-      const blockingItem = occupiedCells[cellKey];
-      const isBlocked = blockingItem && blockingItem !== item.id;
+      let isBlocked = false;
+      for (let c = 0; c < itemWidth; c++) {
+        for (let r = 0; r < itemHeight; r++) {
+          const cellKey = `${newCol + c},${newRow + r}`;
+          const blockingItem = occupiedCells[cellKey];
+          if (blockingItem && blockingItem !== item.id) {
+            isBlocked = true;
+          }
+        }
+      }
 
       if (isBlocked) {
         runOnJS(Vibration.vibrate)([0, 50, 50, 50]); 
@@ -102,13 +113,32 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
       }
     });
 
+  const isLarge = itemHeight >= 2; 
+  const renderCols = isLarge ? 2 : itemWidth;
+  const renderRows = isLarge ? 2 : itemHeight;
+
+  const visualWidth = CELL_SIZE * renderCols * 1.5;
+  const visualHeight = CELL_SIZE * (item.isTall && !isLarge ? 2 : (renderRows * 1.5));
+  
+  const leftOffset = -(visualWidth - (CELL_SIZE * itemWidth)) / 2;
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle}>
-        <View style={{ position: 'absolute', bottom: 0, width: '100%', height: item.isTall ? CELL_SIZE * 2.2 : CELL_SIZE, alignItems: 'center', justifyContent: 'flex-end' }}>
-          <Text style={{ fontSize: item.isTall ? CELL_SIZE * 1.5 : CELL_SIZE * 0.7, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 4 }}>
-            {item.emoji}
-          </Text>
+        <View style={{ 
+          position: 'absolute', 
+          bottom: 0, 
+          left: leftOffset, 
+          width: visualWidth, 
+          height: visualHeight, 
+          alignItems: 'center', 
+          justifyContent: 'flex-end' 
+        }}>
+          <Image 
+            source={item.image} 
+            style={{ width: '100%', height: '100%' }} 
+            resizeMode="contain" 
+          />
         </View>
       </Animated.View>
     </GestureDetector>
@@ -118,24 +148,190 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
 /* MAIN GARDEN SCREEN
 =================================================== */
 export default function GardenScreen() {
-  // STATES
-  const [currentGarden, setCurrentGarden] = useState('Raked Sand');
+  const router = useRouter();
+  const { gardenId } = useLocalSearchParams<{ gardenId: string }>();
+
+  const [loading, setLoading] = useState(true);
+  const [currentGardenDocId, setCurrentGardenDocId] = useState<string | null>(gardenId || null);
+  const [currentGardenName, setCurrentGardenName] = useState('Loading...');
+  
+  // DROPDOWN STATE
+  const [userGardens, setUserGardens] = useState<{ id: string; name: string }[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
   const [activeGhost, setActiveGhost] = useState<any>(null);
-  const [placedItems, setPlacedItems] = useState<PlantItem[]>([
-    { id: '1', emoji: '🍄', col: 2, row: 4, isTall: false },
-    { id: '2', emoji: '🪷', col: 5, row: 8, isTall: false },
-  ]);
-
-  //  REFS & SHARED VALUES
-  const router = useRouter();
+  const [placedItems, setPlacedItems] = useState<any[]>([]);
+  
   const gridRef = useRef<View>(null);
   const zoomScaleRef = useRef(1);
   const activeDragX = useSharedValue(0);
   const activeDragY = useSharedValue(0);
   const zoomScale = useSharedValue(1);
 
-  //  EFFECTS & RELATED HANDLERS
+  // --- GHOST VISUAL SIZING & ANIMATED STYLE ---
+  const isGhostLarge = (activeGhost?.gridHeight || 1) >= 2;
+  const ghostRenderCols = isGhostLarge ? 2 : (activeGhost?.gridWidth || 1);
+  const ghostRenderRows = isGhostLarge ? 2 : (activeGhost?.gridHeight || 1);
+  
+  const ghostVisualWidth = CELL_SIZE * ghostRenderCols * 1.5;
+  const ghostVisualHeight = CELL_SIZE * (activeGhost?.isTall && !isGhostLarge ? 2 : (ghostRenderRows * 1.5));
+
+  const ghostAnimatedStyle = useAnimatedStyle(() => ({
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    transform: [
+      { translateX: activeDragX.value - (ghostVisualWidth / 2) }, 
+      { translateY: activeDragY.value - (ghostVisualHeight * 0.75) } 
+    ],
+    zIndex: 9999,
+    pointerEvents: 'none',
+  }));
+
+  // --- 1. FETCH ALL USER GARDENS FOR DROPDOWN ---
+  const fetchUserGardens = async () => {
+    if (!auth.currentUser) return;
+    try {
+      const gardensRef = collection(db, 'gardens');
+      const q = query(gardensRef, where('OwnerId', '==', auth.currentUser.uid));
+      const gardensSnap = await getDocs(q);
+
+      const fetchedList: { id: string; name: string }[] = [];
+      gardensSnap.forEach((docSnap) => {
+        fetchedList.push({
+          id: docSnap.id,
+          name: docSnap.data().GardenTheme || 'Untitled Garden',
+        });
+      });
+
+      setUserGardens(fetchedList);
+
+      // Default to first garden if none selected
+      if (!currentGardenDocId && fetchedList.length > 0) {
+        setCurrentGardenDocId(fetchedList[0].id);
+      }
+    } catch (error) {
+      console.error("Error fetching user gardens:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserGardens();
+  }, [currentGardenDocId]);
+
+  // --- 2. FETCH CURRENT SELECTED GARDEN DATA ---
+  useEffect(() => {
+    const fetchGarden = async () => {
+      if (!currentGardenDocId) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        const gardenRef = doc(db, 'gardens', currentGardenDocId);
+        const gardenSnap = await getDoc(gardenRef);
+
+        if (gardenSnap.exists()) {
+          const data = gardenSnap.data();
+          setCurrentGardenName(data.GardenTheme || 'My Garden');
+          
+          if (data.PlacedItems && Array.isArray(data.PlacedItems)) {
+            const reconstructedItems = data.PlacedItems.map((savedItem: any) => {
+              const catalogItem = INVENTORY_ITEMS.find(i => i.id === savedItem.catalogId);
+              return {
+                id: savedItem.instanceId,
+                catalogId: savedItem.catalogId,
+                image: catalogItem?.image,
+                col: savedItem.col,
+                row: savedItem.row,
+                isTall: catalogItem?.isTall || false,
+                gridWidth: catalogItem?.gridWidth || 1,
+                gridHeight: catalogItem?.gridHeight || 1,
+              };
+            }).filter((item: any) => item.image);
+
+            setPlacedItems(reconstructedItems);
+          } else {
+            setPlacedItems([]);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching garden:", error);
+        Alert.alert("Error", "Could not load your garden.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchGarden();
+  }, [currentGardenDocId]);
+
+  // --- 3. SAVE GARDEN DATA ---
+  const saveGardenData = async (newPlacedItems: any[]) => {
+    if (!currentGardenDocId) return;
+
+    try {
+      const gardenRef = doc(db, 'gardens', currentGardenDocId);
+      
+      const firestoreItems = newPlacedItems.map(item => ({
+        instanceId: item.id,
+        catalogId: item.catalogId,
+        col: item.col,
+        row: item.row
+      }));
+
+      await updateDoc(gardenRef, {
+        PlacedItems: firestoreItems,
+        TotalEntities: firestoreItems.length
+      });
+    } catch (error) {
+      console.error("Error saving garden:", error);
+    }
+  };
+
+  // --- 4. CREATE NEW GARDEN ---
+  const handleCreateNewGarden = () => {
+    Alert.prompt(
+      "New Garden",
+      "Give your new garden a name:",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Create", 
+          onPress: async (name?: string) => {
+            if (!name || !auth.currentUser) return;
+            try {
+              setLoading(true);
+              const newGardenRef = await addDoc(collection(db, 'gardens'), {
+                OwnerId: auth.currentUser.uid,
+                GardenTheme: name,
+                TotalEntities: 0,
+                PlacedItems: [],
+                CreatedAt: serverTimestamp()
+              });
+              
+              setCurrentGardenDocId(newGardenRef.id);
+              setCurrentGardenName(name);
+              setPlacedItems([]);
+            } catch (error) {
+              console.error("Error creating garden:", error);
+              Alert.alert("Error", "Could not create garden.");
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleSelectGarden = (id: string) => {
+    setCurrentGardenDocId(id);
+    setIsDropdownOpen(false);
+  };
+
   const handleScroll = (e: any) => {
     const currentScale = e?.nativeEvent?.zoomScale;
     if (currentScale && currentScale > 0) {
@@ -144,21 +340,34 @@ export default function GardenScreen() {
     }
   };
 
-  //  MEMOS & GARDEN HANDLERS
   const occupiedCells = useMemo(() => {
     const map: Record<string, string> = {};
     placedItems.forEach(item => {
-      map[`${item.col},${item.row}`] = item.id;
+      const gw = item.gridWidth || 1;
+      const gh = item.gridHeight || 1;
+      for (let c = 0; c < gw; c++) {
+        for (let r = 0; r < gh; r++) {
+          map[`${item.col + c},${item.row + r}`] = item.id;
+        }
+      }
     });
     return map;
   }, [placedItems]);
 
   const handleSnap = (id: string, newCol: number, newRow: number) => {
-    setPlacedItems(prev => prev.map(item => item.id === id ? { ...item, col: newCol, row: newRow } : item));
+    setPlacedItems(prev => {
+      const updated = prev.map(item => item.id === id ? { ...item, col: newCol, row: newRow } : item);
+      saveGardenData(updated); 
+      return updated;
+    });
   };
 
   const handleDelete = (id: string) => {
-    setPlacedItems(prev => prev.filter(item => item.id !== id));
+    setPlacedItems(prev => {
+      const updated = prev.filter(item => item.id !== id);
+      saveGardenData(updated); 
+      return updated;
+    });
   };
 
   const handleInventoryDragStart = (item: any) => {
@@ -179,80 +388,156 @@ export default function GardenScreen() {
         const relativeX = absoluteX - pageX;
         const relativeY = absoluteY - pageY;
         
+        const ghostLogicalWidth = activeGhost.gridWidth || 1;
+        const ghostLogicalHeight = activeGhost.gridHeight || 1;
+
         let targetCol = Math.floor(relativeX / scaledCellSize);
         let targetRow = Math.floor(relativeY / scaledCellSize);
-        
-        targetCol = Math.max(0, Math.min(targetCol, COLUMNS - 1));
-        targetRow = Math.max(0, Math.min(targetRow, ROWS - 1));
+        targetCol = Math.max(0, Math.min(targetCol, COLUMNS - ghostLogicalWidth));
+        targetRow = Math.max(0, Math.min(targetRow, ROWS - ghostLogicalHeight));
 
-        if (occupiedCells[`${targetCol},${targetRow}`]) {
+        let isBlocked = false;
+        for (let c = 0; c < ghostLogicalWidth; c++) {
+          for (let r = 0; r < ghostLogicalHeight; r++) {
+            if (occupiedCells[`${targetCol + c},${targetRow + r}`]) {
+              isBlocked = true;
+            }
+          }
+        }
+
+        if (isBlocked) {
           Vibration.vibrate([0, 50, 50, 50]); 
         } else {
-          const isTallItem = ['Tree', 'Pine', 'Torii'].includes(activeGhost?.name || '');
-          setPlacedItems(prev => [...prev, {
-            id: Date.now().toString(),
-            emoji: activeGhost.emoji,
-            col: targetCol,
-            row: targetRow,
-            isTall: isTallItem
-          }]);
+          setPlacedItems(prev => {
+            const newItem = {
+              id: Date.now().toString(), 
+              catalogId: activeGhost.id, 
+              image: activeGhost.image,
+              col: targetCol,
+              row: targetRow,
+              isTall: activeGhost.isTall || false,
+              gridWidth: ghostLogicalWidth,
+              gridHeight: ghostLogicalHeight
+            };
+            const updated = [...prev, newItem];
+            saveGardenData(updated); 
+            return updated;
+          });
         }
       }
       setActiveGhost(null);
     });
   };
 
-  const ghostAnimatedStyle = useAnimatedStyle(() => ({
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    transform: [
-      { translateX: activeDragX.value - (CELL_SIZE / 2) },
-      { translateY: activeDragY.value - CELL_SIZE }
-    ],
-    zIndex: 9999,
-    pointerEvents: 'none',
-  }));
-
-  
+  if (loading) {
+    return (
+      <View className="flex-1 bg-[#F4EFE6] items-center justify-center">
+        <ActivityIndicator size="large" color="#4A4A4A" />
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-[#F4EFE6]">
         
+        {/* GARDEN DROPDOWN MODAL */}
+        <Modal
+          visible={isDropdownOpen}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setIsDropdownOpen(false)}
+        >
+          <Pressable 
+            className="flex-1 bg-black/40 justify-start pt-28 items-center"
+            onPress={() => setIsDropdownOpen(false)}
+          >
+            <Pressable 
+              className="w-[85%] bg-[#F4EFE6] border-2 border-[#4A4A4A]/30 rounded-2xl p-4 shadow-xl"
+              onPress={(e) => e.stopPropagation()} 
+            >
+              <Text className="font-zenmaru-bold text-xl text-[#4A4A4A] mb-3 border-b border-[#4A4A4A]/20 pb-2">
+                Select Garden
+              </Text>
+
+              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                {userGardens.map((g) => {
+                  const isSelected = g.id === currentGardenDocId;
+                  return (
+                    <Pressable
+                      key={g.id}
+                      onPress={() => handleSelectGarden(g.id)}
+                      className={`flex-row justify-between items-center p-3 rounded-xl mb-1 ${
+                        isSelected ? 'bg-[#4A4A4A]/10' : 'active:bg-[#4A4A4A]/5'
+                      }`}
+                    >
+                      <Text className={`font-zenmaru text-lg ${isSelected ? 'text-[#4A4A4A] font-bold' : 'text-gray-600'}`}>
+                        {g.name}
+                      </Text>
+                      {isSelected && (
+                        <MaterialCommunityIcons name="check" size={20} color="#4A4A4A" />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <View className="border-t border-[#4A4A4A]/20 mt-2 pt-2">
+                <Pressable
+                  onPress={() => {
+                    setIsDropdownOpen(false);
+                    handleCreateNewGarden();
+                  }}
+                  className="flex-row items-center gap-x-2 p-3 rounded-xl bg-[#4A4A4A]/10 active:opacity-70"
+                >
+                  <MaterialCommunityIcons name="plus" size={22} color="#4A4A4A" />
+                  <Text className="font-zenmaru-bold text-lg text-[#4A4A4A]">Create New Garden</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         {/* Global Ghost Item Overlay Layer */}
         {activeGhost && (
-          <Animated.View style={ghostAnimatedStyle}>
-            <Text style={{ 
-              fontSize: ['Tree', 'Pine', 'Torii'].includes(activeGhost.name) ? CELL_SIZE * 1.5 : CELL_SIZE * 0.7,
-              textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 4,
-              opacity: 0.8
-            }}>
-              {activeGhost.emoji}
-            </Text>
+          <Animated.View style={[ghostAnimatedStyle, { 
+            width: ghostVisualWidth, 
+            height: ghostVisualHeight 
+          }]}>
+            <Image 
+              source={activeGhost.image} 
+              style={{ width: '100%', height: '100%', opacity: 0.8 }} 
+              resizeMode="contain" 
+            />
           </Animated.View>
         )}
 
-        {/* Sand Texture Background */}
         <View pointerEvents="none" className="absolute inset-0 z-0">
           <Image source={require('../assets/textures/SandTextureVertical.webp')} className="w-full h-full opacity-30" resizeMode="cover" />
         </View>
 
         <SafeAreaView className="flex-1 justify-between" edges={['top']}>
           
-          {/* Screen Header */}
           <View className="px-6 pt-2 z-10">
             <Pressable onPress={() => router.back()} className="flex-row items-center mb-2 active:opacity-60">
               <MaterialCommunityIcons name="chevron-left" size={28} color="#4A4A4A" />
               <Text className="font-zenmaru text-2xl text-[#4A4A4A]">Dashboard</Text>
             </Pressable>
-            <Pressable className="flex-row items-center gap-x-2">
-              <Text className="font-zenmaru-bold text-4xl text-[#4A4A4A]">{currentGarden}</Text>
-              <MaterialCommunityIcons name="chevron-down" size={32} color="#4A4A4A" />
+            
+            {/* GARDEN HEADER DROPDOWN TRIGGER */}
+            <Pressable 
+              onPress={() => setIsDropdownOpen(true)} 
+              className="flex-row items-center gap-x-2 active:opacity-60"
+            >
+              <Text className="font-zenmaru-bold text-4xl text-[#4A4A4A]">{currentGardenName}</Text>
+              <MaterialCommunityIcons 
+                name={isDropdownOpen ? "chevron-up" : "chevron-down"} 
+                size={32} 
+                color="#4A4A4A" 
+              />
             </Pressable>
           </View>
 
-          {/* Canvas Scroll Area */}
           <View className="flex-1 z-0 mt-2 mb-2">
             <ScrollView
               scrollEnabled={isScrollEnabled} 
@@ -272,20 +557,17 @@ export default function GardenScreen() {
               onScroll={handleScroll}
               scrollEventThrottle={16}
             >
-              {/* Garden Grid Surface */}
               <View 
                 ref={gridRef}
                 style={{ width: GRID_WIDTH, height: GRID_HEIGHT }}
                 className="bg-[#EFEAE1]/50 border-2 border-[#4A4A4A]/40 rounded-lg shadow-sm relative"
               >
-                {/* Background Grid Cells */}
                 <View className="absolute inset-0 flex-row flex-wrap pointer-events-none">
                   {Array.from({ length: TOTAL_CELLS }).map((_, index) => (
                     <View key={`cell-${index}`} style={{ width: '12.5%', height: CELL_SIZE }} className="border border-[#4A4A4A]/10" />
                   ))}
                 </View>
 
-                {/* Placed Plant Entities */}
                 {placedItems.map(item => (
                   <DraggablePlant 
                     key={item.id} 
@@ -301,7 +583,6 @@ export default function GardenScreen() {
             </ScrollView>
           </View>
 
-          {/* Bottom Inventory Drawer */}
           <GardenInventory 
             dragX={activeDragX} 
             dragY={activeDragY} 

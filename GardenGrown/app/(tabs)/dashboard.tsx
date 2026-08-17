@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Image, Pressable, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import StatCard from '../../components/DashboardStatCard';
 import GardenCard from '../../components/DashboardGardenCard';
@@ -7,12 +7,20 @@ import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
+// --- CAROUSEL LAYOUT METRICS ---
+const { width: screenWidth } = Dimensions.get('window');
+const CARD_WIDTH = screenWidth - 48; 
+const CARD_HEIGHT = 210; 
+const CARD_SPACING = 16; 
+const SNAP_INTERVAL = CARD_WIDTH + CARD_SPACING; 
+
 export default function Dashboard() {
   const router = useRouter();
 
   // --- STATE ---
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState('Gardener');
+  const [activeGardenIndex, setActiveGardenIndex] = useState(0);
 
   // Overall user stats
   const [userStats, setUserStats] = useState({
@@ -21,7 +29,6 @@ export default function Dashboard() {
     gardenedSince: 'Just now'
   });
 
-  // Storing as an array to allow for multiple gardens later
   const [gardens, setGardens] = useState<any[]>([]);
 
   // --- FETCH DATA ---
@@ -41,14 +48,13 @@ export default function Dashboard() {
           const userData = userSnap.data();
           if (userData.Username) setUsername(userData.Username);
 
-          // Format Firestore AccountCreated Timestamp to "Month Year" (e.g., "Aug 2026")
           if (userData.AccountCreated) {
             const dateObj = userData.AccountCreated.toDate();
             fetchedGardenedSince = `${dateObj.toLocaleString('default', { month: 'short' })} ${dateObj.getFullYear()}`;
           }
         }
 
-        // 2. Fetch User's Gardens
+        // 2. Fetch ALL Gardens Belonging to the User
         const gardensRef = collection(db, 'gardens');
         const q = query(gardensRef, where('OwnerId', '==', user.uid));
         const gardensSnap = await getDocs(q);
@@ -60,12 +66,16 @@ export default function Dashboard() {
           gardensSnap.forEach((gardenDoc) => {
             const data = gardenDoc.data();
 
-            // Sum up entities across all gardens for the overall stat card
-            fetchedTotalDecorations += (data.TotalEntities || 0);
+            const itemsInThisGarden = Array.isArray(data.PlacedItems) 
+              ? data.PlacedItems.length 
+              : (data.TotalEntities || 0);
+
+            fetchedTotalDecorations += itemsInThisGarden;
 
             fetchedGardens.push({
               id: gardenDoc.id,
-              ...data
+              ...data,
+              itemCount: itemsInThisGarden
             });
           });
         }
@@ -89,6 +99,15 @@ export default function Dashboard() {
     fetchDashboardData();
   }, []);
 
+  // --- HANDLE CAROUSEL SCROLL ---
+  const handleCarouselScroll = (e: any) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const newIndex = Math.round(offsetX / SNAP_INTERVAL);
+    if (newIndex >= 0 && newIndex < gardens.length && newIndex !== activeGardenIndex) {
+      setActiveGardenIndex(newIndex);
+    }
+  };
+
   // --- LOADING UI ---
   if (loading) {
     return (
@@ -98,10 +117,8 @@ export default function Dashboard() {
     );
   }
 
-  // TODO: ADD CAROUSEL FOR MORE GARDENS - STORE FIRST GARDEN FOR NOW
-  const currentGarden = gardens.length > 0 ? gardens[0] : null;
-  const currentGardenTheme = currentGarden?.GardenTheme || 'Empty Plot';
-  const currentGardenItems = currentGarden?.TotalEntities || 0;
+  const currentGarden = gardens.length > 0 ? gardens[activeGardenIndex] : null;
+  const currentGardenItems = currentGarden?.itemCount || 0;
 
   return (
     <View className="flex-1 bg-[#EFEAE1]">
@@ -117,66 +134,115 @@ export default function Dashboard() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
-            paddingHorizontal: 24,
-            paddingTop: 5
+            paddingTop: 5,
+            paddingBottom: 24
           }}
         >
-          <View className="flex-row flex-wrap justify-between gap-y-3">
+          {/* MAIN COLUMN WRAPPER */}
+          <View className="flex-col gap-y-3">
 
             {/* HEADER */}
-            <View className="w-full mb-2">
+            <View className="w-full px-6 mb-1">
               <Text className="font-zenmaru-bold text-5xl text-[#4A4A4A] mb-1 leading-tight">
-                Welcome Back
+                Welcome Back,
               </Text>
               <Text className="font-zenloop text-4xl text-gray-700 leading-none">
-                Lets see how your garden has grown
+                Let's see how your gardens have grown
               </Text>
             </View>
 
-            {/* TOP STAT CARDS (Overall Data) */}
-            <View className="w-[48%] h-[20vh]">
-              <StatCard
-                iconName="tree"
-                heading="Total Gardens:"
-                statValue={userStats.totalGardens.toString()}
-              />
-            </View>
-            <View className="w-[48%] h-[20vh]">
-              <StatCard
-                iconName="flower-tulip"
-                heading="Total Decorations"
-                statValue={userStats.totalDecorations.toString()}
-              />
-            </View>
-
-            {/* GARDEN CARD */}
-            <View className="w-full h-[25vh] my-1">
-              <Pressable onPress={() => router.push('/garden')}>
-                <GardenCard
-                  title="Current Garden"
-                  gardenName={currentGardenTheme}
-                  currentIndex={0}
-                  totalCards={userStats.totalGardens > 0 ? userStats.totalGardens : 1}
-                  onPressEnter={() => console.log('Entering garden...')}
+            {/* TOP STAT CARDS */}
+            <View className="w-full px-6 flex-row justify-between">
+              <View className="w-[48%] h-[20vh]">
+                <StatCard
+                  iconName="tree"
+                  heading="Total Gardens:"
+                  statValue={userStats.totalGardens.toString()}
                 />
-              </Pressable>
+              </View>
+              <View className="w-[48%] h-[20vh]">
+                <StatCard
+                  iconName="flower-tulip"
+                  heading="Total Decorations:"
+                  statValue={userStats.totalDecorations.toString()}
+                />
+              </View>
             </View>
 
-            {/* BOTTOM STAT CARDS (Contextual to User & Current Garden) */}
-            <View className="w-[48%] h-[20vh]">
-              <StatCard
-                iconName="leaf"
-                heading="Gardened Since:"
-                statValue={userStats.gardenedSince}
-              />
+            {/* GARDEN CAROUSEL */}
+            <View style={{ height: CARD_HEIGHT + 10 /* Added +10 due to clipping of the shadow */ }} className="w-full">
+              {gardens.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  decelerationRate="fast"
+                  snapToInterval={SNAP_INTERVAL}
+                  snapToAlignment="start"
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={handleCarouselScroll}
+                  contentContainerStyle={{
+                    paddingHorizontal: 24,
+                    paddingTop: 4,
+                    paddingBottom: 16 // Room for the drop shadow
+                  }}
+                >
+                  {gardens.map((garden, index) => (
+                    <View 
+                      key={garden.id} 
+                      style={{ 
+                        width: CARD_WIDTH,
+                        height: CARD_HEIGHT,
+                        marginRight: index === gardens.length - 1 ? 0 : CARD_SPACING
+                      }}
+                    >
+                      <Pressable
+                        style={{ width: '100%', height: '100%' }}
+                        onPress={() => {
+                          router.push({
+                            pathname: '/garden',
+                            params: { gardenId: garden.id }
+                          });
+                        }}
+                      >
+                        <GardenCard
+                          title="Current Garden"
+                          gardenName={garden.GardenTheme || 'Untitled Garden'}
+                          currentIndex={index}
+                          totalCards={gardens.length}
+                        />
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={{ height: CARD_HEIGHT }} className="px-6 w-full">
+                  <GardenCard
+                    title="Current Garden"
+                    gardenName="No Gardens Found"
+                    currentIndex={0}
+                    totalCards={1}
+                  />
+                </View>
+              )}
             </View>
-            <View className="w-[48%] h-[20vh]">
-              <StatCard
-                iconName="sprout"
-                heading="Items Placed:"
-                statValue={currentGardenItems.toString()}
-              />
+
+            {/* BOTTOM STAT CARDS */}
+            <View className="w-full px-6 flex-row justify-between">
+              <View className="w-[48%] h-[20vh]">
+                <StatCard
+                  iconName="leaf"
+                  heading="Gardened Since:"
+                  statValue={userStats.gardenedSince}
+                />
+              </View>
+              <View className="w-[48%] h-[20vh]">
+                <StatCard
+                  iconName="sprout"
+                  heading="Active Plot Items:"
+                  statValue={currentGardenItems.toString()}
+                />
+              </View>
             </View>
+
           </View>
         </ScrollView>
       </SafeAreaView>
