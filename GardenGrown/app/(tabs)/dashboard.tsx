@@ -9,10 +9,10 @@ import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firesto
 
 // --- CAROUSEL LAYOUT METRICS ---
 const { width: screenWidth } = Dimensions.get('window');
-const CARD_WIDTH = screenWidth - 48; 
-const CARD_HEIGHT = 210; 
-const CARD_SPACING = 16; 
-const SNAP_INTERVAL = CARD_WIDTH + CARD_SPACING; 
+const CARD_WIDTH = screenWidth - 48;
+const CARD_HEIGHT = 210;
+const CARD_SPACING = 16;
+const SNAP_INTERVAL = CARD_WIDTH + CARD_SPACING;
 
 export default function Dashboard() {
   const router = useRouter();
@@ -66,8 +66,8 @@ export default function Dashboard() {
           gardensSnap.forEach((gardenDoc) => {
             const data = gardenDoc.data();
 
-            const itemsInThisGarden = Array.isArray(data.PlacedItems) 
-              ? data.PlacedItems.length 
+            const itemsInThisGarden = Array.isArray(data.PlacedItems)
+              ? data.PlacedItems.length
               : (data.TotalEntities || 0);
 
             fetchedTotalDecorations += itemsInThisGarden;
@@ -87,6 +87,8 @@ export default function Dashboard() {
           totalDecorations: fetchedTotalDecorations,
           gardenedSince: fetchedGardenedSince
         });
+        // console.log('PlacedItems sample:', JSON.stringify(gardens[0].PlacedItems));
+        
 
       } catch (error: any) {
         console.error("Error fetching dashboard data:", error);
@@ -186,9 +188,9 @@ export default function Dashboard() {
                   }}
                 >
                   {gardens.map((garden, index) => (
-                    <View 
-                      key={garden.id} 
-                      style={{ 
+                    <View
+                      key={garden.id}
+                      style={{
                         width: CARD_WIDTH,
                         height: CARD_HEIGHT,
                         marginRight: index === gardens.length - 1 ? 0 : CARD_SPACING
@@ -206,6 +208,7 @@ export default function Dashboard() {
                         <GardenCard
                           title="Current Garden"
                           gardenName={garden.GardenTheme || 'Untitled Garden'}
+                          placedItems={garden.PlacedItems}
                           currentIndex={index}
                           totalCards={gardens.length}
                         />
