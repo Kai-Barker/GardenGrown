@@ -29,8 +29,8 @@ export default function SignUp() {
         displayName: username
       });
       await setDoc(doc(db, 'users', user.uid), {
-        username: username,
-        email: email,
+        Username: username,
+        Email: email,
         createdAt: new Date().toISOString(),
       });
       

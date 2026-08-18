@@ -7,7 +7,8 @@ import ThickDivider from '@/components/ThickDivider';
 import FormInput from '../../components/FormInput';
 import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../../firebase';
 
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
@@ -17,8 +18,9 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [notifications, setNotifications] = useState(true);
 
-  // State to hold the local image URI
+  // State to hold the local/remote image URI
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -31,9 +33,13 @@ export default function ProfileScreen() {
           const userDocRef = doc(db, 'users', user.uid);
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-            const fetchedName = userDoc.data().Username || 'ZenGardener123';
+            const data = userDoc.data();
+            const fetchedName = data.Username || 'ZenGardener123';
             setUsername(fetchedName);
             setSavedUsername(fetchedName);
+            if (data.ProfileImageURI) {
+              setProfileImage(data.ProfileImageURI);
+            }
           }
         }
       } catch (error) {
@@ -84,7 +90,34 @@ export default function ProfileScreen() {
     });
 
     if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
+      const localUri = result.assets[0].uri;
+      setProfileImage(localUri); // optimistic preview
+
+      const user = auth.currentUser;
+      if (!user) return;
+
+      setUploadingImage(true);
+      try {
+        const response = await fetch(localUri);
+        const blob = await response.blob();
+
+        const imageRef = ref(storage, `profileImages/${user.uid}`);
+        await uploadBytes(imageRef, blob);
+        const downloadURL = await getDownloadURL(imageRef);
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          ProfileImageURI: downloadURL,
+        });
+        await updateProfile(user, {
+          photoURL: downloadURL,
+        });
+
+        setProfileImage(downloadURL);
+      } catch (error: any) {
+        Alert.alert('Upload Failed', 'Could not upload profile photo: ' + error.message);
+      } finally {
+        setUploadingImage(false);
+      }
     }
   };
   const handleUsernameBlur = async () => {
@@ -169,13 +202,18 @@ export default function ProfileScreen() {
               {/* Edit Button */}
               <Pressable
                 onPress={pickImage}
+                disabled={uploadingImage}
                 className="relative w-16 h-16 active:opacity-80"
               >
                 {/* 1. Solid Shadow Layer */}
                 <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
                 {/* 2. Main Card Layer */}
                 <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl items-center justify-center w-full h-full">
-                  <MaterialCommunityIcons name="plus" size={38} color="#A3C4A3" />
+                  <MaterialCommunityIcons
+                    name={uploadingImage ? 'loading' : 'plus'}
+                    size={38}
+                    color="#A3C4A3"
+                  />
                 </View>
               </Pressable>
 

@@ -40,7 +40,13 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GardenGrown to access your photos to set a profile picture."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
