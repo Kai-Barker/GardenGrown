@@ -61,9 +61,13 @@ type GardenInventoryProps = {
   dragY: SharedValue<number>;
   onDragStart: (item: InventoryItem, startX: number, startY: number) => void;
   onDragEnd: (endX: number, endY: number) => void;
+  gardenName: string;
+  isDropdownOpen: boolean;
+  onBack: () => void;
+  onOpenDropdown: () => void;
 };
 
-export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd }: GardenInventoryProps) {
+export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd, gardenName, isDropdownOpen, onBack, onOpenDropdown }: GardenInventoryProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeCategory, setActiveCategory] = useState<CategoryType>('Plant');
   const isExpandedRef = useRef(isExpanded);
@@ -94,6 +98,13 @@ export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd }: Garden
     } else {
       snapTo(0, true);
     }
+  };
+
+  const handleOpenDropdown = () => {
+    if (isExpanded) {
+      snapTo(CLOSED_TRANSLATE_Y, false);
+    }
+    onOpenDropdown();
   };
 
   const panResponder = useRef(
@@ -142,40 +153,77 @@ export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd }: Garden
     >
       <View {...panResponder.panHandlers}>
         <View className="items-center -mb-1 z-10">
-          <Pressable 
+          <Pressable
             onPress={toggleDrawer}
             className="bg-[#9BB49E] border-2 border-[#4A4A4A] px-6 py-1 rounded-t-2xl items-center justify-center active:opacity-80"
           >
-            <MaterialCommunityIcons 
-              name={isExpanded ? "chevron-down" : "chevron-up"} 
-              size={28} 
-              color="#4A4A4A" 
+            <MaterialCommunityIcons
+              name={isExpanded ? "chevron-down" : "chevron-up"}
+              size={28}
+              color="#4A4A4A"
             />
           </Pressable>
         </View>
 
-        <View className="w-full bg-[#46546B] border-t-2 border-[#4A4A4A] pt-2 pb-2 flex-row justify-around items-center px-4">
-          {CATEGORY_TABS.map((tab, index) => {
-            const isActive = activeCategory === tab.key;
-            return (
-              <React.Fragment key={tab.key}>
-                {index > 0 && <View className="w-[1px] h-6 bg-white/20" />}
-                <Pressable
-                  onPress={() => setActiveCategory(tab.key)}
-                  className={`flex-1 items-center py-1 mx-1 rounded-xl active:opacity-70 ${
-                    isActive ? 'bg-[#374151]/60' : ''
-                  }`}
-                >
-                  <MaterialCommunityIcons 
-                    name={tab.icon} 
-                    size={24} 
-                    color={isActive ? '#FADBB3' : '#9CA3AF'} 
-                  />
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </View>
+        {isExpanded ? (
+          <View className="w-full bg-[#46546B] border-t-2 border-[#4A4A4A] pt-2 pb-2 flex-row justify-around items-center px-4">
+            {CATEGORY_TABS.map((tab, index) => {
+              const isActive = activeCategory === tab.key;
+              return (
+                <React.Fragment key={tab.key}>
+                  {index > 0 && <View className="w-[1px] h-6 bg-white/20" />}
+                  <Pressable
+                    onPress={() => setActiveCategory(tab.key)}
+                    className={`flex-1 items-center py-1 mx-1 rounded-xl active:opacity-70 ${
+                      isActive ? 'bg-[#374151]/60' : ''
+                    }`}
+                  >
+                    <MaterialCommunityIcons
+                      name={tab.icon}
+                      size={24}
+                      color={isActive ? '#FADBB3' : '#9CA3AF'}
+                    />
+                  </Pressable>
+                </React.Fragment>
+              );
+            })}
+          </View>
+        ) : (
+          <View className="w-full bg-[#46546B] border-t-2 border-[#4A4A4A] pt-2 pb-2 flex-row items-center px-4 gap-x-2">
+            <Pressable onPress={onBack} className="flex-row items-center active:opacity-60">
+              <MaterialCommunityIcons name="chevron-left" size={24} color="#FADBB3" />
+              <Text className="font-zenmaru text-base text-[#FADBB3]">Back</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleOpenDropdown}
+              className="flex-1 flex-row items-center justify-center gap-x-1 active:opacity-60"
+            >
+              <Text
+                numberOfLines={1}
+                className="font-zenmaru-bold text-lg text-[#FADBB3]"
+              >
+                {gardenName}
+              </Text>
+              <MaterialCommunityIcons
+                name={isDropdownOpen ? "chevron-up" : "chevron-down"}
+                size={20}
+                color="#FADBB3"
+              />
+            </Pressable>
+
+            <View className="flex-row items-center gap-x-1">
+              {CATEGORY_TABS.map((tab) => (
+                <MaterialCommunityIcons
+                  key={tab.key}
+                  name={tab.icon}
+                  size={18}
+                  color={activeCategory === tab.key ? '#FADBB3' : '#9CA3AF'}
+                />
+              ))}
+            </View>
+          </View>
+        )}
       </View>
 
       <View className="flex-1 bg-[#46546B] px-4 pt-2">

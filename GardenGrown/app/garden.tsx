@@ -18,7 +18,7 @@ import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, query, whe
 /* CONFIGURATION & TYPES
 =================================================== */
 const COLUMNS = 8;
-const ROWS = 12;
+const ROWS = 16;
 const TOTAL_CELLS = COLUMNS * ROWS;
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -517,26 +517,6 @@ export default function GardenScreen() {
         </View>
 
         <SafeAreaView className="flex-1 justify-between" edges={['top']}>
-          
-          <View className="px-6 pt-2 z-10">
-            <Pressable onPress={() => router.back()} className="flex-row items-center mb-2 active:opacity-60">
-              <MaterialCommunityIcons name="chevron-left" size={28} color="#4A4A4A" />
-              <Text className="font-zenmaru text-2xl text-[#4A4A4A]">Dashboard</Text>
-            </Pressable>
-            
-            {/* GARDEN HEADER DROPDOWN TRIGGER */}
-            <Pressable 
-              onPress={() => setIsDropdownOpen(true)} 
-              className="flex-row items-center gap-x-2 active:opacity-60"
-            >
-              <Text className="font-zenmaru-bold text-4xl text-[#4A4A4A]">{currentGardenName}</Text>
-              <MaterialCommunityIcons 
-                name={isDropdownOpen ? "chevron-up" : "chevron-down"} 
-                size={32} 
-                color="#4A4A4A" 
-              />
-            </Pressable>
-          </View>
 
           <View className="flex-1 z-0 mt-2 mb-2">
             <ScrollView
@@ -547,12 +527,11 @@ export default function GardenScreen() {
               centerContent={true}
               showsHorizontalScrollIndicator={false} 
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ 
-                flexGrow: 1, 
-                justifyContent: 'flex-start', 
+              contentContainerStyle={{
+                flexGrow: 1,
+                justifyContent: 'center',
                 alignItems: 'center',
-                paddingTop: 16,
-                paddingBottom: 40
+                paddingBottom: 100
               }}
               onScroll={handleScroll}
               scrollEventThrottle={16}
@@ -583,11 +562,15 @@ export default function GardenScreen() {
             </ScrollView>
           </View>
 
-          <GardenInventory 
-            dragX={activeDragX} 
-            dragY={activeDragY} 
-            onDragStart={handleInventoryDragStart} 
-            onDragEnd={handleInventoryDragEnd} 
+          <GardenInventory
+            dragX={activeDragX}
+            dragY={activeDragY}
+            onDragStart={handleInventoryDragStart}
+            onDragEnd={handleInventoryDragEnd}
+            gardenName={currentGardenName}
+            isDropdownOpen={isDropdownOpen}
+            onBack={() => router.back()}
+            onOpenDropdown={() => setIsDropdownOpen(true)}
           />
 
         </SafeAreaView>
