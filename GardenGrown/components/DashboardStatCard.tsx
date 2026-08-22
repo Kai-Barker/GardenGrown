@@ -29,8 +29,6 @@ export default function StatCard({ iconName, heading, statValue }: StatCardProps
                     <View className="h-[65px] justify-center -mt-2">
                         <Text
                             numberOfLines={1}
-                            adjustsFontSizeToFit
-                            minimumFontScale={0.5}
                             className="font-zenloop text-[#A3C4A3] text-5xl"
                         >
                             {statValue}

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, Image, Pressable, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import StatCard from '../../components/DashboardStatCard';
 import GardenCard from '../../components/DashboardGardenCard';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { auth, db } from '../../firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
@@ -32,8 +32,7 @@ export default function Dashboard() {
   const [gardens, setGardens] = useState<any[]>([]);
 
   // --- FETCH DATA ---
-  useEffect(() => {
-    const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
       const user = auth.currentUser;
       if (!user) return;
 
@@ -82,13 +81,14 @@ export default function Dashboard() {
 
         // 3. Update State
         setGardens(fetchedGardens);
+        setActiveGardenIndex(prev => Math.min(prev, Math.max(fetchedGardens.length - 1, 0)));
         setUserStats({
           totalGardens: gardensSnap.size,
           totalDecorations: fetchedTotalDecorations,
           gardenedSince: fetchedGardenedSince
         });
         // console.log('PlacedItems sample:', JSON.stringify(gardens[0].PlacedItems));
-        
+
 
       } catch (error: any) {
         console.error("Error fetching dashboard data:", error);
@@ -96,10 +96,16 @@ export default function Dashboard() {
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchDashboardData();
   }, []);
+
+  // Refetch every time the dashboard regains focus (e.g. returning from the
+  // garden screen via back button, swipe-back, or tab switch) so deleted/updated
+  // gardens don't linger stale in the list.
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardData();
+    }, [fetchDashboardData])
+  );
 
   // --- HANDLE CAROUSEL SCROLL ---
   const handleCarouselScroll = (e: any) => {

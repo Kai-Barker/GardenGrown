@@ -13,7 +13,7 @@ import Animated, {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GardenInventory, INVENTORY_ITEMS } from '../components/GardenInventory';
 import { db, auth } from '../firebase';
-import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 
 /* CONFIGURATION & TYPES
 =================================================== */
@@ -332,6 +332,39 @@ export default function GardenScreen() {
     setIsDropdownOpen(false);
   };
 
+  const handleDeleteGarden = (id: string, name: string) => {
+    Alert.alert(
+      `Delete "${name}"?`,
+      "This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'gardens', id));
+              const remaining = userGardens.filter(g => g.id !== id);
+              setUserGardens(remaining);
+
+              if (id === currentGardenDocId) {
+                if (remaining.length > 0) {
+                  setCurrentGardenDocId(remaining[0].id);
+                } else {
+                  setIsDropdownOpen(false);
+                  router.replace('/(tabs)/dashboard');
+                }
+              }
+            } catch (error) {
+              console.error("Error deleting garden:", error);
+              Alert.alert("Error", "Could not delete garden.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleScroll = (e: any) => {
     const currentScale = e?.nativeEvent?.zoomScale;
     if (currentScale && currentScale > 0) {
@@ -448,51 +481,73 @@ export default function GardenScreen() {
           animationType="fade"
           onRequestClose={() => setIsDropdownOpen(false)}
         >
-          <Pressable 
+          <Pressable
             className="flex-1 bg-black/40 justify-start pt-28 items-center"
             onPress={() => setIsDropdownOpen(false)}
           >
-            <Pressable 
-              className="w-[85%] bg-[#F4EFE6] border-2 border-[#4A4A4A]/30 rounded-2xl p-4 shadow-xl"
-              onPress={(e) => e.stopPropagation()} 
+            <Pressable
+              className="relative w-[85%]"
+              onPress={(e) => e.stopPropagation()}
             >
-              <Text className="font-zenmaru-bold text-xl text-[#4A4A4A] mb-3 border-b border-[#4A4A4A]/20 pb-2">
-                Select Garden
-              </Text>
+              <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
+              <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl p-4">
+                <Text className="font-zenmaru-bold text-xl text-[#FADBB3] mb-3 border-b border-[#FADBB3]/20 pb-2">
+                  Select Garden
+                </Text>
 
-              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
-                {userGardens.map((g) => {
-                  const isSelected = g.id === currentGardenDocId;
-                  return (
-                    <Pressable
-                      key={g.id}
-                      onPress={() => handleSelectGarden(g.id)}
-                      className={`flex-row justify-between items-center p-3 rounded-xl mb-1 ${
-                        isSelected ? 'bg-[#4A4A4A]/10' : 'active:bg-[#4A4A4A]/5'
-                      }`}
-                    >
-                      <Text className={`font-zenmaru text-lg ${isSelected ? 'text-[#4A4A4A] font-bold' : 'text-gray-600'}`}>
-                        {g.name}
-                      </Text>
-                      {isSelected && (
-                        <MaterialCommunityIcons name="check" size={20} color="#4A4A4A" />
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
+                <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                  {userGardens.map((g) => {
+                    const isSelected = g.id === currentGardenDocId;
+                    return (
+                      <Pressable
+                        key={g.id}
+                        onPress={() => handleSelectGarden(g.id)}
+                        className={`flex-row justify-between items-center p-3 rounded-xl mb-2 border-2 ${
+                          isSelected ? 'border-[#9BB49E] bg-[#9BB49E]/20' : 'border-[#FADBB3]/15 active:bg-[#FADBB3]/10'
+                        }`}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          className={`flex-1 font-zenmaru text-lg ${isSelected ? 'text-[#FADBB3] font-bold' : 'text-[#FADBB3]/70'}`}
+                        >
+                          {g.name}
+                        </Text>
 
-              <View className="border-t border-[#4A4A4A]/20 mt-2 pt-2">
-                <Pressable
-                  onPress={() => {
-                    setIsDropdownOpen(false);
-                    handleCreateNewGarden();
-                  }}
-                  className="flex-row items-center gap-x-2 p-3 rounded-xl bg-[#4A4A4A]/10 active:opacity-70"
-                >
-                  <MaterialCommunityIcons name="plus" size={22} color="#4A4A4A" />
-                  <Text className="font-zenmaru-bold text-lg text-[#4A4A4A]">Create New Garden</Text>
-                </Pressable>
+                        <View className="flex-row items-center gap-x-3 ml-2">
+                          {isSelected && (
+                            <MaterialCommunityIcons name="check" size={20} color="#9BB49E" />
+                          )}
+                          <Pressable
+                            hitSlop={8}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteGarden(g.id, g.name);
+                            }}
+                            className="active:opacity-60"
+                          >
+                            <MaterialCommunityIcons name="trash-can-outline" size={20} color="#D9534F" />
+                          </Pressable>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                <View className="border-t border-[#FADBB3]/20 mt-2 pt-3">
+                  <Pressable
+                    onPress={() => {
+                      setIsDropdownOpen(false);
+                      handleCreateNewGarden();
+                    }}
+                    className="relative active:opacity-80"
+                  >
+                    <View className="absolute w-full h-full bg-[#4A4A4A] rounded-xl top-1 left-1" />
+                    <View className="relative flex-row items-center justify-center gap-x-2 p-3 rounded-xl bg-[#9BB49E] border-2 border-[#4A4A4A]">
+                      <MaterialCommunityIcons name="plus" size={22} color="#4A4A4A" />
+                      <Text className="font-zenmaru-bold text-lg text-[#4A4A4A]">Create New Garden</Text>
+                    </View>
+                  </Pressable>
+                </View>
               </View>
             </Pressable>
           </Pressable>
