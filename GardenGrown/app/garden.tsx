@@ -12,8 +12,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GardenInventory, INVENTORY_ITEMS } from '../components/GardenInventory';
-import { db, auth } from '../firebase';
-import { doc, getDoc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { auth } from '../firebase';
+import {
+  getUserGardens,
+  getGarden,
+  createGarden,
+  saveGardenItems,
+  deleteGarden,
+} from '../services/garden';
 
 /* CONFIGURATION & TYPES
 =================================================== */
@@ -193,17 +199,12 @@ export default function GardenScreen() {
   const fetchUserGardens = async () => {
     if (!auth.currentUser) return;
     try {
-      const gardensRef = collection(db, 'gardens');
-      const q = query(gardensRef, where('OwnerId', '==', auth.currentUser.uid));
-      const gardensSnap = await getDocs(q);
+      const userGardens = await getUserGardens(auth.currentUser.uid);
 
-      const fetchedList: { id: string; name: string }[] = [];
-      gardensSnap.forEach((docSnap) => {
-        fetchedList.push({
-          id: docSnap.id,
-          name: docSnap.data().GardenTheme || 'Untitled Garden',
-        });
-      });
+      const fetchedList = userGardens.map((garden) => ({
+        id: garden.id,
+        name: garden.GardenTheme || 'Untitled Garden',
+      }));
 
       setUserGardens(fetchedList);
 
@@ -230,11 +231,9 @@ export default function GardenScreen() {
       
       try {
         setLoading(true);
-        const gardenRef = doc(db, 'gardens', currentGardenDocId);
-        const gardenSnap = await getDoc(gardenRef);
+        const data = await getGarden(currentGardenDocId);
 
-        if (gardenSnap.exists()) {
-          const data = gardenSnap.data();
+        if (data) {
           setCurrentGardenName(data.GardenTheme || 'My Garden');
           
           if (data.PlacedItems && Array.isArray(data.PlacedItems)) {
@@ -273,19 +272,7 @@ export default function GardenScreen() {
     if (!currentGardenDocId) return;
 
     try {
-      const gardenRef = doc(db, 'gardens', currentGardenDocId);
-      
-      const firestoreItems = newPlacedItems.map(item => ({
-        instanceId: item.id,
-        catalogId: item.catalogId,
-        col: item.col,
-        row: item.row
-      }));
-
-      await updateDoc(gardenRef, {
-        PlacedItems: firestoreItems,
-        TotalEntities: firestoreItems.length
-      });
+      await saveGardenItems(currentGardenDocId, newPlacedItems);
     } catch (error) {
       console.error("Error saving garden:", error);
     }
@@ -304,15 +291,9 @@ export default function GardenScreen() {
             if (!name || !auth.currentUser) return;
             try {
               setLoading(true);
-              const newGardenRef = await addDoc(collection(db, 'gardens'), {
-                OwnerId: auth.currentUser.uid,
-                GardenTheme: name,
-                TotalEntities: 0,
-                PlacedItems: [],
-                CreatedAt: serverTimestamp()
-              });
-              
-              setCurrentGardenDocId(newGardenRef.id);
+              const newGardenId = await createGarden(auth.currentUser.uid, name);
+
+              setCurrentGardenDocId(newGardenId);
               setCurrentGardenName(name);
               setPlacedItems([]);
             } catch (error) {
@@ -343,7 +324,7 @@ export default function GardenScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteDoc(doc(db, 'gardens', id));
+              await deleteGarden(id);
               const remaining = userGardens.filter(g => g.id !== id);
               setUserGardens(remaining);
 

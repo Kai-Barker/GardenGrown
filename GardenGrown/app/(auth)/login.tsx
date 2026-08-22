@@ -5,9 +5,7 @@ import { useRouter } from 'expo-router';
 import { AuthButton, AuthDivider } from '../../components/AuthComponents'; 
 import FormInput from '../../components/FormInput'; 
 
-// --- NEW FIREBASE IMPORTS ---
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebase'; 
+import { signIn } from '../../services/users';
 
 export default function Login() {
     const router = useRouter();
@@ -24,8 +22,8 @@ export default function Login() {
 
         try {
             // 2. Tell Firebase to log the user in
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            console.log('Successfully logged in:', userCredential.user.email);
+            const user = await signIn(email, password);
+            console.log('Successfully logged in:', user.email);
             
             // 3. Navigate to dashboard on success
             router.replace('/(tabs)/dashboard');

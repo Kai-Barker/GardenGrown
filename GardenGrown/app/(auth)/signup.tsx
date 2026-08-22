@@ -4,9 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AuthButton, AuthDivider } from '../../components/AuthComponents';
 import FormInput from '../../components/FormInput'; 
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
+import { createUserAccount, createUserDocument } from '../../services/users';
 
 export default function SignUp() {
   const router = useRouter();
@@ -23,17 +21,9 @@ export default function SignUp() {
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      await updateProfile(user, {
-        displayName: username
-      });
-      await setDoc(doc(db, 'users', user.uid), {
-        Username: username,
-        Email: email,
-        createdAt: new Date().toISOString(),
-      });
-      
+      const user = await createUserAccount(email, password, username);
+      await createUserDocument(user.uid, { username, email });
+
       console.log('Successfully created user & database record for:', username);
       router.replace('/(tabs)/dashboard');
       

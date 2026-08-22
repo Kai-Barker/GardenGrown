@@ -4,8 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import StatCard from '../../components/DashboardStatCard';
 import GardenCard from '../../components/DashboardGardenCard';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { auth, db } from '../../firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { auth } from '../../firebase';
+import { getUserProfile } from '../../services/users';
+import { getUserGardens } from '../../services/garden';
 
 // --- CAROUSEL LAYOUT METRICS ---
 const { width: screenWidth } = Dimensions.get('window');
@@ -38,13 +39,11 @@ export default function Dashboard() {
 
       try {
         // 1. Fetch User Document
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
+        const userData = await getUserProfile(user.uid);
 
         let fetchedGardenedSince = 'Just now';
 
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
+        if (userData) {
           if (userData.Username) setUsername(userData.Username);
 
           if (userData.AccountCreated) {
@@ -54,36 +53,28 @@ export default function Dashboard() {
         }
 
         // 2. Fetch ALL Gardens Belonging to the User
-        const gardensRef = collection(db, 'gardens');
-        const q = query(gardensRef, where('OwnerId', '==', user.uid));
-        const gardensSnap = await getDocs(q);
+        const userGardens = await getUserGardens(user.uid);
 
         let fetchedTotalDecorations = 0;
-        const fetchedGardens: any[] = [];
 
-        if (!gardensSnap.empty) {
-          gardensSnap.forEach((gardenDoc) => {
-            const data = gardenDoc.data();
+        const fetchedGardens = userGardens.map((data) => {
+          const itemsInThisGarden = Array.isArray(data.PlacedItems)
+            ? data.PlacedItems.length
+            : (data.TotalEntities || 0);
 
-            const itemsInThisGarden = Array.isArray(data.PlacedItems)
-              ? data.PlacedItems.length
-              : (data.TotalEntities || 0);
+          fetchedTotalDecorations += itemsInThisGarden;
 
-            fetchedTotalDecorations += itemsInThisGarden;
-
-            fetchedGardens.push({
-              id: gardenDoc.id,
-              ...data,
-              itemCount: itemsInThisGarden
-            });
-          });
-        }
+          return {
+            ...data,
+            itemCount: itemsInThisGarden
+          };
+        });
 
         // 3. Update State
         setGardens(fetchedGardens);
         setActiveGardenIndex(prev => Math.min(prev, Math.max(fetchedGardens.length - 1, 0)));
         setUserStats({
-          totalGardens: gardensSnap.size,
+          totalGardens: fetchedGardens.length,
           totalDecorations: fetchedTotalDecorations,
           gardenedSince: fetchedGardenedSince
         });
@@ -217,6 +208,12 @@ export default function Dashboard() {
                           placedItems={garden.PlacedItems}
                           currentIndex={index}
                           totalCards={gardens.length}
+                          onPressEnter={() => {
+                            router.push({
+                              pathname: '/garden',
+                              params: { gardenId: garden.id }
+                            });
+                          }}
                         />
                       </Pressable>
                     </View>

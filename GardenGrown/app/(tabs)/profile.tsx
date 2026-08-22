@@ -5,10 +5,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import ThickDivider from '@/components/ThickDivider';
 import FormInput from '../../components/FormInput';
-import { signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from '../../firebase';
+import { auth } from '../../firebase';
+import {
+  getUserProfile,
+  updateUsername,
+  uploadProfileImage,
+  changePassword,
+  signOutUser,
+} from '../../services/users';
 
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
@@ -30,11 +34,9 @@ export default function ProfileScreen() {
         const user = auth.currentUser;
         if (user) {
           setEmail(user.email || '');
-          const userDocRef = doc(db, 'users', user.uid);
-          const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            const fetchedName = data.Username || 'ZenGardener123';
+          const data = await getUserProfile(user.uid);
+          if (data) {
+            const fetchedName = data.Username || 'missingName';
             setUsername(fetchedName);
             setSavedUsername(fetchedName);
             if (data.ProfileImageURI) {
@@ -60,9 +62,7 @@ export default function ProfileScreen() {
     const user = auth.currentUser;
     if (user && user.email) {
       try {
-        const credential = EmailAuthProvider.credential(user.email, currentPassword);
-        await reauthenticateWithCredential(user, credential);
-        await updatePassword(user, newPassword);
+        await changePassword(currentPassword, newPassword);
         Alert.alert('Success!', 'Your password has been updated.');
         setCurrentPassword('');
         setNewPassword('');
@@ -75,7 +75,7 @@ export default function ProfileScreen() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await signOutUser();
     } catch (error: any) {
       Alert.alert('Sign Out Error', error.message);
     }
@@ -98,20 +98,7 @@ export default function ProfileScreen() {
 
       setUploadingImage(true);
       try {
-        const response = await fetch(localUri);
-        const blob = await response.blob();
-
-        const imageRef = ref(storage, `profileImages/${user.uid}`);
-        await uploadBytes(imageRef, blob);
-        const downloadURL = await getDownloadURL(imageRef);
-
-        await updateDoc(doc(db, 'users', user.uid), {
-          ProfileImageURI: downloadURL,
-        });
-        await updateProfile(user, {
-          photoURL: downloadURL,
-        });
-
+        const downloadURL = await uploadProfileImage(user.uid, localUri);
         setProfileImage(downloadURL);
       } catch (error: any) {
         Alert.alert('Upload Failed', 'Could not upload profile photo: ' + error.message);
@@ -135,16 +122,7 @@ export default function ProfileScreen() {
     const user = auth.currentUser;
     if (user) {
       try {
-
-        await updateDoc(doc(db, 'users', user.uid), {
-          Username: trimmedName,
-        });
-
-
-        await updateProfile(user, {
-          displayName: trimmedName,
-        });
-
+        await updateUsername(user.uid, trimmedName);
 
         setSavedUsername(trimmedName);
         console.log('Username updated to:', trimmedName);
