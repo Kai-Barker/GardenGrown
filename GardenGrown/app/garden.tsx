@@ -3,67 +3,70 @@ import { View, Text, Pressable, Image, ScrollView, Dimensions, Vibration, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
   runOnJS,
-  interpolate
+  interpolate,
+  type SharedValue
 } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { GardenInventory, INVENTORY_ITEMS } from '../components/GardenInventory';
+import { GardenInventory } from '../components/GardenInventory';
+import {
+  CELL_SIZE,
+  COLUMNS,
+  DELETE_THRESHOLD,
+  GRID_HEIGHT,
+  GRID_WIDTH,
+  ROWS,
+  TOTAL_CELLS,
+  cellKey,
+  computeVisualBox,
+} from '../components/Garden/constants';
+import { PlacedObject, PlantObject, DecorationObject } from '../components/Garden/objects';
+import { getEntry } from '../components/Garden/catalog';
+import { terrainIdFromCatalogId } from '../components/Garden/terrain';
+import TerrainLayer from '../components/Garden/TerrainLayer';
+import type { CatalogEntry, PlacedObjectData, TerrainMap } from '../components/Garden/types';
 import { auth } from '../firebase';
 import {
   getUserGardens,
   getGarden,
   createGarden,
-  saveGardenItems,
+  saveGardenLayout,
   deleteGarden,
 } from '../services/garden';
 
-/* CONFIGURATION & TYPES
+/* DRAGGABLE OBJECT COMPONENT
 =================================================== */
-const COLUMNS = 8;
-const ROWS = 16;
-const TOTAL_CELLS = COLUMNS * ROWS;
-
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const GRID_WIDTH = screenWidth - 48;
-const INNER_GRID_WIDTH = GRID_WIDTH - 4; 
-const CELL_SIZE = INNER_GRID_WIDTH / COLUMNS; 
-const GRID_HEIGHT = (CELL_SIZE * ROWS) + 4;
-
-const DELETE_THRESHOLD = screenHeight - 150;
-
-type PlantItem = {
-  id: string;
-  image: any; 
-  col: number;
-  row: number;
-  isTall?: boolean;
-  gridWidth?: number;
-  gridHeight?: number;
+type DraggableObjectProps = {
+  item: PlacedObject;
+  onSnap: (id: string, col: number, row: number) => void;
+  onDelete: (id: string) => void;
+  setScrollEnabled: (enabled: boolean) => void;
+  occupiedCells: Record<string, string>;
+  zoomScale: SharedValue<number>;
 };
 
-/* DRAGGABLE PLANT COMPONENT
-=================================================== */
-function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCells, zoomScale }: any) {
+function DraggableObject({ item, onSnap, onDelete, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
   const isDragging = useSharedValue(false);
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
 
-  const itemWidth = item.gridWidth || 1;
-  const itemHeight = item.gridHeight || 1;
+  // Read everything the gesture worklets need off the instance up front —
+  // worklets can only close over plain values, not class instances.
+  const { instanceId, col, row, gridWidth: itemWidth, gridHeight: itemHeight } = item;
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      position: 'absolute', 
-      width: CELL_SIZE * itemWidth, 
+      position: 'absolute',
+      width: CELL_SIZE * itemWidth,
       height: CELL_SIZE * itemHeight,
       transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
-      zIndex: interpolate(isDragging.value ? 1 : 0, [0, 1], [item.row, 999]), 
+      zIndex: interpolate(isDragging.value ? 1 : 0, [0, 1], [row, 999]),
     };
   });
 
@@ -84,9 +87,9 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
       runOnJS(setScrollEnabled)(true); 
 
       if (event.absoluteY > DELETE_THRESHOLD) {
-        runOnJS(Vibration.vibrate)([0, 50, 100, 50]); 
-        runOnJS(onDelete)(item.id);
-        return; 
+        runOnJS(Vibration.vibrate)([0, 50, 100, 50]);
+        runOnJS(onDelete)(instanceId);
+        return;
       }
 
       const currentX = translateX.value;
@@ -100,50 +103,48 @@ function DraggablePlant({ item, onSnap, onDelete, setScrollEnabled, occupiedCell
       let isBlocked = false;
       for (let c = 0; c < itemWidth; c++) {
         for (let r = 0; r < itemHeight; r++) {
-          const cellKey = `${newCol + c},${newRow + r}`;
-          const blockingItem = occupiedCells[cellKey];
-          if (blockingItem && blockingItem !== item.id) {
+          const key = `${newCol + c},${newRow + r}`;
+          const blockingItem = occupiedCells[key];
+          if (blockingItem && blockingItem !== instanceId) {
             isBlocked = true;
           }
         }
       }
 
       if (isBlocked) {
-        runOnJS(Vibration.vibrate)([0, 50, 50, 50]); 
-        translateX.value = withSpring(item.col * CELL_SIZE);
-        translateY.value = withSpring(item.row * CELL_SIZE);
+        runOnJS(Vibration.vibrate)([0, 50, 50, 50]);
+        translateX.value = withSpring(col * CELL_SIZE);
+        translateY.value = withSpring(row * CELL_SIZE);
       } else {
         translateX.value = withSpring(newCol * CELL_SIZE);
         translateY.value = withSpring(newRow * CELL_SIZE);
-        runOnJS(onSnap)(item.id, newCol, newRow);
+        runOnJS(onSnap)(instanceId, newCol, newRow);
       }
     });
 
-  const isLarge = itemHeight >= 2; 
-  const renderCols = isLarge ? 2 : itemWidth;
-  const renderRows = isLarge ? 2 : itemHeight;
-
-  const visualWidth = CELL_SIZE * renderCols * 1.5;
-  const visualHeight = CELL_SIZE * (item.isTall && !isLarge ? 2 : (renderRows * 1.5));
-  
-  const leftOffset = -(visualWidth - (CELL_SIZE * itemWidth)) / 2;
+  // Art renders larger than its footprint and bottom-anchored to it, so a
+  // plant's feet stay in its cell while foliage spills over the neighbours.
+  const box = computeVisualBox(item);
+  const visualWidth = CELL_SIZE * box.width;
+  const visualHeight = CELL_SIZE * box.height;
+  const leftOffset = CELL_SIZE * box.left;
 
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle}>
-        <View style={{ 
-          position: 'absolute', 
-          bottom: 0, 
-          left: leftOffset, 
-          width: visualWidth, 
-          height: visualHeight, 
-          alignItems: 'center', 
-          justifyContent: 'flex-end' 
+        <View style={{
+          position: 'absolute',
+          bottom: 0,
+          left: leftOffset,
+          width: visualWidth,
+          height: visualHeight,
+          alignItems: 'center',
+          justifyContent: 'flex-end'
         }}>
-          <Image 
-            source={item.image} 
-            style={{ width: '100%', height: '100%' }} 
-            resizeMode="contain" 
+          <Image
+            source={item.getImage()}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="contain"
           />
         </View>
       </Animated.View>
@@ -166,9 +167,18 @@ export default function GardenScreen() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
-  const [activeGhost, setActiveGhost] = useState<any>(null);
-  const [placedItems, setPlacedItems] = useState<any[]>([]);
-  
+  const [activeGhost, setActiveGhost] = useState<CatalogEntry | null>(null);
+  const [placedItems, setPlacedItems] = useState<PlacedObject[]>([]);
+  const [terrain, setTerrain] = useState<TerrainMap>({});
+
+  // Mirrors of the two layout states, so a save triggered from inside one
+  // setState updater can read the other half without closing over stale state.
+  const placedItemsRef = useRef<PlacedObject[]>([]);
+  const terrainRef = useRef<TerrainMap>({});
+
+  useEffect(() => { placedItemsRef.current = placedItems; }, [placedItems]);
+  useEffect(() => { terrainRef.current = terrain; }, [terrain]);
+
   const gridRef = useRef<View>(null);
   const zoomScaleRef = useRef(1);
   const activeDragX = useSharedValue(0);
@@ -176,12 +186,19 @@ export default function GardenScreen() {
   const zoomScale = useSharedValue(1);
 
   // --- GHOST VISUAL SIZING & ANIMATED STYLE ---
-  const isGhostLarge = (activeGhost?.gridHeight || 1) >= 2;
-  const ghostRenderCols = isGhostLarge ? 2 : (activeGhost?.gridWidth || 1);
-  const ghostRenderRows = isGhostLarge ? 2 : (activeGhost?.gridHeight || 1);
-  
-  const ghostVisualWidth = CELL_SIZE * ghostRenderCols * 1.5;
-  const ghostVisualHeight = CELL_SIZE * (activeGhost?.isTall && !isGhostLarge ? 2 : (ghostRenderRows * 1.5));
+  // Terrain tiles fill exactly one cell; everything else previews at the same
+  // oversized scale it'll render at once placed.
+  const isGhostTerrain = activeGhost?.kind === 'terrain';
+  const ghostBox = isGhostTerrain
+    ? { width: 1, height: 1 }
+    : computeVisualBox({
+        gridWidth: activeGhost?.gridWidth ?? 1,
+        gridHeight: activeGhost?.gridHeight ?? 1,
+        isTall: activeGhost?.isTall,
+      });
+
+  const ghostVisualWidth = CELL_SIZE * ghostBox.width;
+  const ghostVisualHeight = CELL_SIZE * ghostBox.height;
 
   const ghostAnimatedStyle = useAnimatedStyle(() => ({
     position: 'absolute',
@@ -235,26 +252,28 @@ export default function GardenScreen() {
 
         if (data) {
           setCurrentGardenName(data.GardenTheme || 'My Garden');
-          
+
           if (data.PlacedItems && Array.isArray(data.PlacedItems)) {
-            const reconstructedItems = data.PlacedItems.map((savedItem: any) => {
-              const catalogItem = INVENTORY_ITEMS.find(i => i.id === savedItem.catalogId);
-              return {
-                id: savedItem.instanceId,
-                catalogId: savedItem.catalogId,
-                image: catalogItem?.image,
-                col: savedItem.col,
-                row: savedItem.row,
-                isTall: catalogItem?.isTall || false,
-                gridWidth: catalogItem?.gridWidth || 1,
-                gridHeight: catalogItem?.gridHeight || 1,
-              };
-            }).filter((item: any) => item.image);
+            // Objects whose catalogId no longer exists resolve to null and are
+            // dropped, matching the long-standing behaviour here.
+            const reconstructedItems = (data.PlacedItems as PlacedObjectData[])
+              .map((savedItem) => PlacedObject.fromData(savedItem, getEntry(savedItem.catalogId)))
+              .filter((item): item is PlacedObject => item !== null);
 
             setPlacedItems(reconstructedItems);
+            placedItemsRef.current = reconstructedItems;
           } else {
             setPlacedItems([]);
+            placedItemsRef.current = [];
           }
+
+          // Gardens created before terrain existed have no Terrain field.
+          const loadedTerrain: TerrainMap = data.Terrain ?? {};
+          setTerrain(loadedTerrain);
+          // Seed the mirrors immediately rather than waiting for the sync
+          // effect, so a save fired right after a garden switch can't write
+          // the previous garden's half of the layout into this one.
+          terrainRef.current = loadedTerrain;
         }
       } catch (error) {
         console.error("Error fetching garden:", error);
@@ -268,11 +287,21 @@ export default function GardenScreen() {
   }, [currentGardenDocId]);
 
   // --- 3. SAVE GARDEN DATA ---
-  const saveGardenData = async (newPlacedItems: any[]) => {
+  // Objects and terrain are saved together. Callers pass whichever half they
+  // just changed; the other half comes from the ref, which always holds the
+  // latest committed value (plain state would be stale inside a setState
+  // updater, where most of these calls happen).
+  const saveGardenData = async (objects?: PlacedObject[], terrainMap?: TerrainMap) => {
     if (!currentGardenDocId) return;
 
+    const nextObjects = objects ?? placedItemsRef.current;
+    const nextTerrain = terrainMap ?? terrainRef.current;
+
+    placedItemsRef.current = nextObjects;
+    terrainRef.current = nextTerrain;
+
     try {
-      await saveGardenItems(currentGardenDocId, newPlacedItems);
+      await saveGardenLayout(currentGardenDocId, nextObjects, nextTerrain);
     } catch (error) {
       console.error("Error saving garden:", error);
     }
@@ -296,6 +325,11 @@ export default function GardenScreen() {
               setCurrentGardenDocId(newGardenId);
               setCurrentGardenName(name);
               setPlacedItems([]);
+              placedItemsRef.current = [];
+              // Clear terrain too, or the previous garden's tiles would be
+              // rendered over — and then saved into — the new empty garden.
+              setTerrain({});
+              terrainRef.current = {};
             } catch (error) {
               console.error("Error creating garden:", error);
               Alert.alert("Error", "Could not create garden.");
@@ -354,41 +388,63 @@ export default function GardenScreen() {
     }
   };
 
+  // "col,row" -> instanceId, for collision checks. Objects that don't block
+  // (terrain) are skipped, so a plant can be placed on a painted cell.
   const occupiedCells = useMemo(() => {
     const map: Record<string, string> = {};
     placedItems.forEach(item => {
-      const gw = item.gridWidth || 1;
-      const gh = item.gridHeight || 1;
-      for (let c = 0; c < gw; c++) {
-        for (let r = 0; r < gh; r++) {
-          map[`${item.col + c},${item.row + r}`] = item.id;
-        }
-      }
+      if (!item.blocksPlacement) return;
+      item.occupiedCells().forEach(key => {
+        map[key] = item.instanceId;
+      });
     });
     return map;
   }, [placedItems]);
 
   const handleSnap = (id: string, newCol: number, newRow: number) => {
     setPlacedItems(prev => {
-      const updated = prev.map(item => item.id === id ? { ...item, col: newCol, row: newRow } : item);
-      saveGardenData(updated); 
+      const updated = prev.map(item =>
+        item.instanceId === id ? item.moveTo(newCol, newRow) : item
+      );
+      saveGardenData(updated);
       return updated;
     });
   };
 
   const handleDelete = (id: string) => {
     setPlacedItems(prev => {
-      const updated = prev.filter(item => item.id !== id);
-      saveGardenData(updated); 
+      const updated = prev.filter(item => item.instanceId !== id);
+      saveGardenData(updated);
       return updated;
     });
   };
 
-  const handleInventoryDragStart = (item: any) => {
-    setActiveGhost(item);
+  /** Paints (or, for the eraser, clears) a single terrain cell. */
+  const handlePaintTerrain = (catalogId: string, col: number, row: number) => {
+    setTerrain(prev => {
+      const key = cellKey(col, row);
+      const terrainId = terrainIdFromCatalogId(catalogId);
+
+      const updated = { ...prev };
+      if (terrainId === null) {
+        delete updated[key];
+      } else {
+        updated[key] = terrainId;
+      }
+
+      saveGardenData(undefined, updated);
+      return updated;
+    });
+  };
+
+  const handleInventoryDragStart = (entry: CatalogEntry) => {
+    setActiveGhost(entry);
   };
 
   const handleInventoryDragEnd = (absoluteX: number, absoluteY: number) => {
+    const entry = activeGhost;
+    if (!entry) return;
+
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
       if (!width || !height) return;
 
@@ -401,42 +457,47 @@ export default function GardenScreen() {
 
         const relativeX = absoluteX - pageX;
         const relativeY = absoluteY - pageY;
-        
-        const ghostLogicalWidth = activeGhost.gridWidth || 1;
-        const ghostLogicalHeight = activeGhost.gridHeight || 1;
+
+        const ghostLogicalWidth = entry.gridWidth ?? 1;
+        const ghostLogicalHeight = entry.gridHeight ?? 1;
 
         let targetCol = Math.floor(relativeX / scaledCellSize);
         let targetRow = Math.floor(relativeY / scaledCellSize);
         targetCol = Math.max(0, Math.min(targetCol, COLUMNS - ghostLogicalWidth));
         targetRow = Math.max(0, Math.min(targetRow, ROWS - ghostLogicalHeight));
 
-        let isBlocked = false;
-        for (let c = 0; c < ghostLogicalWidth; c++) {
-          for (let r = 0; r < ghostLogicalHeight; r++) {
-            if (occupiedCells[`${targetCol + c},${targetRow + r}`]) {
-              isBlocked = true;
+        if (entry.kind === 'terrain') {
+          // Terrain paints its own layer, so it never collides with what's
+          // already on the cell — planting on grass is the whole point.
+          handlePaintTerrain(entry.id, targetCol, targetRow);
+        } else {
+          let isBlocked = false;
+          for (let c = 0; c < ghostLogicalWidth; c++) {
+            for (let r = 0; r < ghostLogicalHeight; r++) {
+              if (occupiedCells[cellKey(targetCol + c, targetRow + r)]) {
+                isBlocked = true;
+              }
             }
           }
-        }
 
-        if (isBlocked) {
-          Vibration.vibrate([0, 50, 50, 50]); 
-        } else {
-          setPlacedItems(prev => {
-            const newItem = {
-              id: Date.now().toString(), 
-              catalogId: activeGhost.id, 
-              image: activeGhost.image,
-              col: targetCol,
-              row: targetRow,
-              isTall: activeGhost.isTall || false,
-              gridWidth: ghostLogicalWidth,
-              gridHeight: ghostLogicalHeight
-            };
-            const updated = [...prev, newItem];
-            saveGardenData(updated); 
-            return updated;
-          });
+          if (isBlocked) {
+            Vibration.vibrate([0, 50, 50, 50]);
+          } else {
+            setPlacedItems(prev => {
+              const instanceId = Date.now().toString();
+              const newItem = entry.kind === 'plant'
+                ? new PlantObject(instanceId, entry, targetCol, targetRow, {
+                    plantedAt: Date.now(),
+                    lastWateredAt: Date.now(),
+                    growthStage: 0,
+                  })
+                : new DecorationObject(instanceId, entry, targetCol, targetRow);
+
+              const updated = [...prev, newItem];
+              saveGardenData(updated);
+              return updated;
+            });
+          }
         }
       }
       setActiveGhost(null);
@@ -536,15 +597,22 @@ export default function GardenScreen() {
 
         {/* Global Ghost Item Overlay Layer */}
         {activeGhost && (
-          <Animated.View style={[ghostAnimatedStyle, { 
-            width: ghostVisualWidth, 
-            height: ghostVisualHeight 
+          <Animated.View style={[ghostAnimatedStyle, {
+            width: ghostVisualWidth,
+            height: ghostVisualHeight
           }]}>
-            <Image 
-              source={activeGhost.image} 
-              style={{ width: '100%', height: '100%', opacity: 0.8 }} 
-              resizeMode="contain" 
-            />
+            {activeGhost.image ? (
+              <Image
+                source={activeGhost.image}
+                style={{ width: '100%', height: '100%', opacity: 0.8 }}
+                resizeMode={isGhostTerrain ? 'cover' : 'contain'}
+              />
+            ) : (
+              // The eraser has no art of its own.
+              <View className="w-full h-full items-center justify-center rounded-md bg-[#4A4A4A]/30 border border-[#4A4A4A]/50">
+                <MaterialCommunityIcons name="eraser" size={CELL_SIZE * 0.6} color="#F4EFE6" />
+              </View>
+            )}
           </Animated.View>
         )}
 
@@ -577,21 +645,26 @@ export default function GardenScreen() {
                 style={{ width: GRID_WIDTH, height: GRID_HEIGHT }}
                 className="bg-[#EFEAE1]/50 border-2 border-[#4A4A4A]/40 rounded-lg shadow-sm relative"
               >
+                {/* Terrain must stay the FIRST child and carry no zIndex —
+                    objects use `zIndex: row`, so a row-0 object only paints
+                    above terrain by being a later sibling. */}
+                <TerrainLayer terrain={terrain} />
+
                 <View className="absolute inset-0 flex-row flex-wrap pointer-events-none">
                   {Array.from({ length: TOTAL_CELLS }).map((_, index) => (
-                    <View key={`cell-${index}`} style={{ width: '12.5%', height: CELL_SIZE }} className="border border-[#4A4A4A]/10" />
+                    <View key={`cell-${index}`} style={{ width: `${100 / COLUMNS}%`, height: CELL_SIZE }} className="border border-[#4A4A4A]/10" />
                   ))}
                 </View>
 
                 {placedItems.map(item => (
-                  <DraggablePlant 
-                    key={item.id} 
-                    item={item} 
+                  <DraggableObject
+                    key={item.instanceId}
+                    item={item}
                     onSnap={handleSnap}
                     onDelete={handleDelete}
                     setScrollEnabled={setIsScrollEnabled}
-                    occupiedCells={occupiedCells} 
-                    zoomScale={zoomScale} 
+                    occupiedCells={occupiedCells}
+                    zoomScale={zoomScale}
                   />
                 ))}
               </View>

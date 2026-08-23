@@ -11,16 +11,13 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import type { PlacedObject } from '../components/Garden/objects';
+import type { PlacedObjectData, TerrainMap } from '../components/Garden/types';
 
 // The shape a placed item takes once persisted to Firestore. Render-only fields
-// (image, isTall, gridWidth/gridHeight) are rehydrated from INVENTORY_ITEMS by
-// the garden screen and are deliberately not stored.
-export type PlacedItem = {
-  instanceId: string;
-  catalogId: string;
-  col: number;
-  row: number;
-};
+// (image, isTall, gridWidth/gridHeight) are rehydrated from the catalog by the
+// garden screen and are deliberately not stored.
+export type PlacedItem = PlacedObjectData;
 
 /** All gardens owned by a user, as full documents plus their id. */
 export const getUserGardens = async (uid: string) => {
@@ -47,6 +44,7 @@ export const createGarden = async (uid: string, name: string): Promise<string> =
     GardenTheme: name,
     TotalEntities: 0,
     PlacedItems: [],
+    Terrain: {},
     CreatedAt: serverTimestamp(),
   });
 
@@ -54,19 +52,25 @@ export const createGarden = async (uid: string, name: string): Promise<string> =
 };
 
 /**
- * Persists a garden's layout. Accepts the screen's runtime items and strips them
- * down to the stored shape, so callers don't need to know the persistence format.
+ * Persists a garden's layout — the objects placed on it and the terrain painted
+ * under them. Each object serialises itself, so callers don't need to know the
+ * persistence format and new object kinds can carry extra state without this
+ * function changing.
+ *
+ * Terrain is stored as a flat "col,row" -> terrain id map rather than in the
+ * items array, so painting a cell is a single-key write and terrain never
+ * competes with objects for occupancy.
  */
-export const saveGardenItems = async (gardenId: string, items: any[]) => {
-  const firestoreItems: PlacedItem[] = items.map((item) => ({
-    instanceId: item.id,
-    catalogId: item.catalogId,
-    col: item.col,
-    row: item.row,
-  }));
+export const saveGardenLayout = async (
+  gardenId: string,
+  objects: PlacedObject[],
+  terrain: TerrainMap,
+) => {
+  const firestoreItems: PlacedItem[] = objects.map((object) => object.toData());
 
   await updateDoc(doc(db, 'gardens', gardenId), {
     PlacedItems: firestoreItems,
+    Terrain: terrain,
     TotalEntities: firestoreItems.length,
   });
 };

@@ -1,7 +1,10 @@
 import React from 'react';
 import { View, Text, Image, ImageSourcePropType, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { INVENTORY_ITEMS } from './GardenInventory';
+import { getEntry } from './Garden/catalog';
+import { COLUMNS as FULL_GRID_COLS, ROWS as FULL_GRID_ROWS, computeVisualBox, parseCellKey } from './Garden/constants';
+import { TERRAIN } from './Garden/terrain';
+import type { TerrainMap } from './Garden/types';
 
 type PlacedItem = {
   catalogId?: string | number;
@@ -17,6 +20,7 @@ type GardenCardProps = {
   title?: string;
   gardenName?: string;
   placedItems?: PlacedItem[];
+  terrain?: TerrainMap;
   imageSource?: ImageSourcePropType;
   onPressEnter?: () => void;
   totalCards?: number;
@@ -26,11 +30,10 @@ type GardenCardProps = {
 // -------------------------------------------------------------
 // TINKER PARAMETERS
 // -------------------------------------------------------------
-// Total dimensions of your actual garden board (8 columns x 12 rows)
-// NOTE: these were previously 4 x 8, which didn't match COLUMNS/ROWS
-// in garden.tsx (8 x 12) and threw off the auto-center clamping.
-const FULL_GRID_COLS = 8;
-const FULL_GRID_ROWS = 12;
+// Grid dimensions and the oversize rule are imported from Garden/constants so
+// they can't drift from the real garden board. They have drifted twice before
+// (4x8 vs 8x12, then 12 vs 16 rows), each time throwing off the camera
+// clamping below — don't re-declare them locally.
 
 // Zoom window dimensions (Lower numbers = closer zoom)
 const VIEWPORT_COLS = 5;
@@ -43,11 +46,6 @@ const AUTO_CENTER_CLUSTER = true;
 const MANUAL_START_COL = 1.5;
 const MANUAL_START_ROW = 3.5;
 
-// How much larger items render vs their logical grid footprint, matching the
-// oversize/bottom-anchor rendering used by DraggablePlant on the main garden
-// screen (garden.tsx), so the preview matches what the real garden looks like.
-const VISUAL_OVERSIZE = 1.5;
-
 // Darkness of the scrim placed over the preview art so title/footer text
 // stays legible. Raise for a darker background, lower for lighter.
 const DARKEN_OPACITY_CLASS = 'bg-black/40';
@@ -57,11 +55,14 @@ export default function GardenCard({
   title = "Current Garden",
   gardenName = "Raked Sand",
   placedItems = [],
+  terrain,
   imageSource,
   onPressEnter,
   totalCards = 3,
   currentIndex = 0,
 }: GardenCardProps) {
+  const terrainEntries = terrain ? Object.entries(terrain) : [];
+  const hasContent = placedItems.length > 0 || terrainEntries.length > 0;
 
   let startCol = MANUAL_START_COL;
   let startRow = MANUAL_START_ROW;
@@ -76,9 +77,7 @@ export default function GardenCard({
       const colIdx = rawCol > 0 ? rawCol - 1 : rawCol;
       const rowIdx = rawRow > 0 ? rawRow - 1 : rawRow;
 
-      const invItem = INVENTORY_ITEMS.find(
-        (i) => i.id === String(item.catalogId)
-      );
+      const invItem = getEntry(String(item.catalogId));
 
       const spanCols = item.gridWidth ?? invItem?.gridWidth ?? 1;
       const spanRows = item.gridHeight ?? invItem?.gridHeight ?? 1;
@@ -128,8 +127,32 @@ export default function GardenCard({
               className="w-full h-full"
               resizeMode="cover"
             />
-          ) : placedItems.length > 0 ? (
+          ) : hasContent ? (
             <View className="relative w-full h-full">
+
+              {/* Terrain — drawn first so it sits under the items, matching the
+                  real garden's layering. */}
+              {terrainEntries.map(([key, terrainId]) => {
+                const tile = TERRAIN[terrainId];
+                if (!tile) return null;
+
+                const { col, row } = parseCellKey(key);
+
+                return (
+                  <Image
+                    key={`terrain-${key}`}
+                    source={tile.image}
+                    style={{
+                      position: 'absolute',
+                      left: `${((col - startCol) / VIEWPORT_COLS) * 100}%`,
+                      top: `${((row - startRow) / VIEWPORT_ROWS) * 100}%`,
+                      width: `${(1 / VIEWPORT_COLS) * 100}%`,
+                      height: `${(1 / VIEWPORT_ROWS) * 100}%`,
+                    }}
+                    resizeMode="cover"
+                  />
+                );
+              })}
 
               {/* Scaled Grid Lines — tinted light since they now sit over the dark card bg */}
               <View className="absolute inset-0 flex-col justify-between">
@@ -157,9 +180,7 @@ export default function GardenCard({
                 const colIdx = rawCol > 0 ? rawCol - 1 : rawCol;
                 const rowIdx = rawRow > 0 ? rawRow - 1 : rawRow;
 
-                const invItem = INVENTORY_ITEMS.find(
-                  (i) => i.id === String(item.catalogId)
-                );
+                const invItem = getEntry(String(item.catalogId));
 
                 // Prefer span/isTall stored on the placed item itself (garden.tsx saves
                 // these directly), falling back to the catalog entry.
@@ -173,18 +194,16 @@ export default function GardenCard({
                 const logicalWidthPercent = (spanCols / VIEWPORT_COLS) * 100;
                 const logicalHeightPercent = (spanRows / VIEWPORT_ROWS) * 100;
 
-                // Visual render size — same oversize rule as DraggablePlant in garden.tsx:
-                // large (2-tall) items render in a 2x2 visual box; tall-but-not-large items
-                // get an extra height boost; everything gets scaled up by VISUAL_OVERSIZE.
-                const isLarge = spanRows >= 2;
-                const renderCols = isLarge ? 2 : spanCols;
-                const renderRows = isLarge ? 2 : spanRows;
+                // Same oversize/bottom-anchor rule the real garden uses, in cell
+                // units, scaled here into viewport percentages.
+                const box = computeVisualBox({
+                  gridWidth: spanCols,
+                  gridHeight: spanRows,
+                  isTall: isTallItem,
+                });
 
-                const visualWidthCells = renderCols * VISUAL_OVERSIZE;
-                const visualHeightCells = isTallItem && !isLarge ? 2 : renderRows * VISUAL_OVERSIZE;
-
-                const visualWidthPercent = (visualWidthCells / VIEWPORT_COLS) * 100;
-                const visualHeightPercent = (visualHeightCells / VIEWPORT_ROWS) * 100;
+                const visualWidthPercent = (box.width / VIEWPORT_COLS) * 100;
+                const visualHeightPercent = (box.height / VIEWPORT_ROWS) * 100;
 
                 // Center the oversized visual box horizontally on the logical footprint,
                 // and bottom-anchor it (feet stay planted in the right cell) — matching

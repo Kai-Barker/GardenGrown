@@ -206,6 +206,7 @@ export default function Dashboard() {
                           title="Current Garden"
                           gardenName={garden.GardenTheme || 'Untitled Garden'}
                           placedItems={garden.PlacedItems}
+                          terrain={garden.Terrain}
                           currentIndex={index}
                           totalCards={gardens.length}
                           onPressEnter={() => {
