@@ -1,18 +1,20 @@
 import React from 'react';
-import { View, Text, Image, ImageSourcePropType, Pressable } from 'react-native';
+import { View, Text, ImageSourcePropType, Pressable } from 'react-native';
+import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getEntry } from './Garden/catalog';
+import { PlacedObject, PlantObject } from './Garden/objects';
 import { COLUMNS as FULL_GRID_COLS, ROWS as FULL_GRID_ROWS, computeVisualBox, parseCellKey } from './Garden/constants';
 import { TERRAIN } from './Garden/terrain';
 import type { TerrainMap } from './Garden/types';
 
+// Mirrors PlacedObjectData, loosened because this reads straight off a Firestore
+// doc. Coordinates are 0-based, matching the garden and the terrain map.
 type PlacedItem = {
   catalogId?: string | number;
   instanceId?: string;
   row?: number;
   col?: number;
-  x?: number;
-  y?: number;
   [key: string]: any;
 };
 
@@ -72,10 +74,8 @@ export default function GardenCard({
     let sumCenterY = 0;
 
     placedItems.forEach((item) => {
-      const rawCol = item.col ?? item.x ?? 1;
-      const rawRow = item.row ?? item.y ?? 1;
-      const colIdx = rawCol > 0 ? rawCol - 1 : rawCol;
-      const rowIdx = rawRow > 0 ? rawRow - 1 : rawRow;
+      const col = item.col ?? 0;
+      const row = item.row ?? 0;
 
       const invItem = getEntry(String(item.catalogId));
 
@@ -83,8 +83,8 @@ export default function GardenCard({
       const spanRows = item.gridHeight ?? invItem?.gridHeight ?? 1;
 
       // Add the true center point of the item (origin + half width/height)
-      sumCenterX += colIdx + spanCols / 2;
-      sumCenterY += rowIdx + spanRows / 2;
+      sumCenterX += col + spanCols / 2;
+      sumCenterY += row + spanRows / 2;
     });
 
     const avgCenterX = sumCenterX / placedItems.length;
@@ -104,8 +104,8 @@ export default function GardenCard({
 
   // Sort items by row so background items render behind foreground items
   const sortedItems = [...placedItems].sort((a, b) => {
-    const rowA = a.row ?? a.y ?? 0;
-    const rowB = b.row ?? b.y ?? 0;
+    const rowA = a.row ?? 0;
+    const rowB = b.row ?? 0;
     return rowA - rowB;
   });
 
@@ -124,8 +124,9 @@ export default function GardenCard({
           {imageSource ? (
             <Image
               source={imageSource}
-              className="w-full h-full"
-              resizeMode="cover"
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
             />
           ) : hasContent ? (
             <View className="relative w-full h-full">
@@ -149,7 +150,8 @@ export default function GardenCard({
                       width: `${(1 / VIEWPORT_COLS) * 100}%`,
                       height: `${(1 / VIEWPORT_ROWS) * 100}%`,
                     }}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
                   />
                 );
               })}
@@ -174,13 +176,24 @@ export default function GardenCard({
 
               {/* Placed Items Positioned Relative to Viewport Camera */}
               {sortedItems.map((item, idx) => {
-                const rawCol = item.col ?? item.x ?? 1;
-                const rawRow = item.row ?? item.y ?? 1;
-
-                const colIdx = rawCol > 0 ? rawCol - 1 : rawCol;
-                const rowIdx = rawRow > 0 ? rawRow - 1 : rawRow;
+                // Coordinates are 0-based and shared with terrain — no offset.
+                const colIdx = item.col ?? 0;
+                const rowIdx = item.row ?? 0;
 
                 const invItem = getEntry(String(item.catalogId));
+
+                // Resolve art through the same object model the garden uses, so a
+                // seedling shows as a seedling here too rather than full-grown.
+                // Falls back to the catalog image if the item can't be hydrated.
+                const placed = invItem
+                  ? PlacedObject.fromData(
+                      { ...(item as any), catalogId: String(item.catalogId) },
+                      invItem,
+                    )
+                  : null;
+                const itemImage = placed ? placed.getImage() : invItem?.image;
+                const stageCells =
+                  placed instanceof PlantObject ? placed.getVisualCells() : undefined;
 
                 // Prefer span/isTall stored on the placed item itself (garden.tsx saves
                 // these directly), falling back to the catalog entry.
@@ -200,6 +213,7 @@ export default function GardenCard({
                   gridWidth: spanCols,
                   gridHeight: spanRows,
                   isTall: isTallItem,
+                  visualCells: stageCells,
                 });
 
                 const visualWidthPercent = (box.width / VIEWPORT_COLS) * 100;
@@ -223,11 +237,12 @@ export default function GardenCard({
                     }}
                     className="items-center justify-center"
                   >
-                    {invItem?.image ? (
+                    {itemImage ? (
                       <Image
-                        source={invItem.image}
-                        className="w-full h-full"
-                        resizeMode="contain"
+                        source={itemImage}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="contain"
+                        cachePolicy="memory-disk"
                       />
                     ) : (
                       <View className="w-2 h-2 rounded-full bg-white/30" />

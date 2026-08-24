@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, Pressable, Image, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, Pressable, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -26,6 +27,7 @@ import {
 } from '../components/Garden/constants';
 import { PlacedObject, PlantObject, DecorationObject } from '../components/Garden/objects';
 import { getEntry } from '../components/Garden/catalog';
+import { GROWTH_TICK_MS } from '../components/Garden/growth';
 import { terrainIdFromCatalogId } from '../components/Garden/terrain';
 import TerrainLayer from '../components/Garden/TerrainLayer';
 import type { CatalogEntry, PlacedObjectData, TerrainMap } from '../components/Garden/types';
@@ -44,12 +46,13 @@ type DraggableObjectProps = {
   item: PlacedObject;
   onSnap: (id: string, col: number, row: number) => void;
   onDelete: (id: string) => void;
+  onWater: (id: string) => void;
   setScrollEnabled: (enabled: boolean) => void;
   occupiedCells: Record<string, string>;
   zoomScale: SharedValue<number>;
 };
 
-function DraggableObject({ item, onSnap, onDelete, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
+function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
   const isDragging = useSharedValue(false);
@@ -122,15 +125,32 @@ function DraggableObject({ item, onSnap, onDelete, setScrollEnabled, occupiedCel
       }
     });
 
+  // Tapping a plant waters it. Raced against the pan so a drag never also
+  // registers as a tap; only plants respond, so decorations behave as before.
+  const isPlant = item.kind === 'plant';
+  const tapGesture = Gesture.Tap()
+    .enabled(isPlant)
+    .onEnd((_event, success) => {
+      if (success) runOnJS(onWater)(instanceId);
+    });
+
+  const gesture = Gesture.Exclusive(panGesture, tapGesture);
+
   // Art renders larger than its footprint and bottom-anchored to it, so a
   // plant's feet stay in its cell while foliage spills over the neighbours.
-  const box = computeVisualBox(item);
+  // An early growth stage overrides the size so a seed stays seed-sized.
+  const box = computeVisualBox({
+    gridWidth: item.gridWidth,
+    gridHeight: item.gridHeight,
+    isTall: item.isTall,
+    visualCells: item instanceof PlantObject ? item.getVisualCells() : undefined,
+  });
   const visualWidth = CELL_SIZE * box.width;
   const visualHeight = CELL_SIZE * box.height;
   const leftOffset = CELL_SIZE * box.left;
 
   return (
-    <GestureDetector gesture={panGesture}>
+    <GestureDetector gesture={gesture}>
       <Animated.View style={animatedStyle}>
         <View style={{
           position: 'absolute',
@@ -144,7 +164,11 @@ function DraggableObject({ item, onSnap, onDelete, setScrollEnabled, occupiedCel
           <Image
             source={item.getImage()}
             style={{ width: '100%', height: '100%' }}
-            resizeMode="contain"
+            contentFit="contain"
+            // Growth swaps this source out; a short crossfade turns the stage
+            // change into a transition instead of a pop.
+            transition={200}
+            cachePolicy="memory-disk"
           />
         </View>
       </Animated.View>
@@ -259,6 +283,13 @@ export default function GardenScreen() {
             const reconstructedItems = (data.PlacedItems as PlacedObjectData[])
               .map((savedItem) => PlacedObject.fromData(savedItem, getEntry(savedItem.catalogId)))
               .filter((item): item is PlacedObject => item !== null);
+
+            // Growth accrues while the app is closed, so catch every plant up to
+            // real elapsed time before the first render. Stage is derived from
+            // plantedAt, so this needs no write — it recomputes on every load.
+            reconstructedItems.forEach((item) => {
+              if (item instanceof PlantObject) item.advanceGrowth();
+            });
 
             setPlacedItems(reconstructedItems);
             placedItemsRef.current = reconstructedItems;
@@ -418,6 +449,53 @@ export default function GardenScreen() {
       return updated;
     });
   };
+
+  /** Records a watering. Growth is time-based for now, so this only logs when. */
+  const handleWater = (id: string) => {
+    setPlacedItems(prev => {
+      const target = prev.find(item => item.instanceId === id);
+      if (!(target instanceof PlantObject)) return prev;
+
+      Vibration.vibrate(30);
+      target.water();
+
+      // water() mutates in place; the new array is what re-renders.
+      const updated = [...prev];
+      saveGardenData(updated);
+      return updated;
+    });
+  };
+
+  // Plants keep growing while the garden is open. Each tick advances every plant
+  // in memory and only commits when a stage actually changed — an uncommitted
+  // tick costs nothing, since stage is recomputed from plantedAt on next load.
+  useEffect(() => {
+    if (!currentGardenDocId) return;
+
+    const interval = setInterval(() => {
+      setPlacedItems(prev => {
+        let changed = false;
+
+        prev.forEach(item => {
+          if (!(item instanceof PlantObject)) return;
+
+          const before = item.growthStage;
+          item.advanceGrowth();
+          if (item.growthStage !== before) changed = true;
+        });
+
+        // Objects mutate in place, so a fresh array is what actually tells React
+        // to re-render — same pattern as handleSnap.
+        if (!changed) return prev;
+
+        const updated = [...prev];
+        saveGardenData(updated);
+        return updated;
+      });
+    }, GROWTH_TICK_MS);
+
+    return () => clearInterval(interval);
+  }, [currentGardenDocId]);
 
   /** Paints (or, for the eraser, clears) a single terrain cell. */
   const handlePaintTerrain = (catalogId: string, col: number, row: number) => {
@@ -605,7 +683,8 @@ export default function GardenScreen() {
               <Image
                 source={activeGhost.image}
                 style={{ width: '100%', height: '100%', opacity: 0.8 }}
-                resizeMode={isGhostTerrain ? 'cover' : 'contain'}
+                contentFit={isGhostTerrain ? 'cover' : 'contain'}
+                cachePolicy="memory-disk"
               />
             ) : (
               // The eraser has no art of its own.
@@ -617,7 +696,12 @@ export default function GardenScreen() {
         )}
 
         <View pointerEvents="none" className="absolute inset-0 z-0">
-          <Image source={require('../assets/textures/SandTextureVertical.webp')} className="w-full h-full opacity-30" resizeMode="cover" />
+          <Image
+            source={require('../assets/textures/SandTextureVertical.webp')}
+            style={{ width: '100%', height: '100%', opacity: 0.3 }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
         </View>
 
         <SafeAreaView className="flex-1 justify-between" edges={['top']}>
@@ -662,6 +746,7 @@ export default function GardenScreen() {
                     item={item}
                     onSnap={handleSnap}
                     onDelete={handleDelete}
+                    onWater={handleWater}
                     setScrollEnabled={setIsScrollEnabled}
                     occupiedCells={occupiedCells}
                     zoomScale={zoomScale}

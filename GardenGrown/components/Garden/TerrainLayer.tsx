@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Image } from 'react-native';
+import { View } from 'react-native';
+import { Image } from 'expo-image';
 import { CELL_SIZE, parseCellKey } from './constants';
 import { TERRAIN } from './terrain';
 import type { TerrainMap } from './types';
@@ -39,7 +40,8 @@ function TerrainLayer({ terrain }: TerrainLayerProps) {
               width: CELL_SIZE,
               height: CELL_SIZE,
             }}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
           />
         );
       })}

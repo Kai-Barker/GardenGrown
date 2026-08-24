@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Text, Pressable, FlatList, Animated, PanResponder, Vibration, Image } from 'react-native';
+import { View, Text, Pressable, FlatList, Animated, PanResponder, Vibration } from 'react-native';
+import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SharedValue, runOnJS } from 'react-native-reanimated';
@@ -260,7 +261,8 @@ function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragEnd }: Inve
             style={isTerrain
               ? { width: '100%', height: '100%' }
               : { width: '85%', height: '85%' }}
-            resizeMode={isTerrain ? 'cover' : 'contain'}
+            contentFit={isTerrain ? 'cover' : 'contain'}
+            cachePolicy="memory-disk"
           />
         ) : (
           <MaterialCommunityIcons name="eraser" size={28} color="#374151" />

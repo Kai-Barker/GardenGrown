@@ -1,5 +1,5 @@
 import { cellKey } from './constants';
-import type { CatalogEntry, ObjectKind, PlacedObjectData } from './types';
+import type { CatalogEntry, GrowthStage, ObjectKind, PlacedObjectData } from './types';
 
 /**
  * Base class for anything that can sit on the garden grid.
@@ -152,13 +152,24 @@ export class PlantObject extends PlacedObject {
     return Math.max(0, (entry.growthStages?.length ?? 0) - 1);
   }
 
-  /** Stage art where it exists, the full-grown image otherwise (today: always the latter). */
-  getImage(): any {
+  /** The stage currently being displayed, clamped into range. */
+  private currentStage(): GrowthStage | undefined {
     const stages = this.entry.growthStages;
-    if (!stages?.length) return this.entry.image;
+    if (!stages?.length) return undefined;
+    return stages[Math.min(this.growthStage, stages.length - 1)];
+  }
 
-    const stage = stages[Math.min(this.growthStage, stages.length - 1)];
-    return stage?.image ?? this.entry.image;
+  /** Stage art where it exists, the full-grown image otherwise. */
+  getImage(): any {
+    return this.currentStage()?.image ?? this.entry.image;
+  }
+
+  /**
+   * Fixed render size in cells for the current stage, or undefined to use the
+   * plant's own footprint. Keeps a seed seed-sized on a tree as well as a herb.
+   */
+  getVisualCells(): number | undefined {
+    return this.currentStage()?.visualCells;
   }
 
   get isMature(): boolean {

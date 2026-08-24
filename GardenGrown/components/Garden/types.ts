@@ -19,6 +19,13 @@ export type GrowthStage = {
   image: any;
   /** hours of (watered) growth after planting before this stage is reached */
   hoursRequired: number;
+  /**
+   * Renders this stage at a fixed size in cells instead of the plant's own
+   * footprint. A seed is a seed whether it grows into a tulip or an oak, so
+   * early stages set this to stay small rather than inheriting a tree's box.
+   * Omitted on the final stage, which renders at the plant's real size.
+   */
+  visualCells?: number;
 };
 
 export type CatalogEntry = {

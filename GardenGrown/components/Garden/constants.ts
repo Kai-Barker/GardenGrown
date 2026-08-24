@@ -38,6 +38,12 @@ type VisualBoxInput = {
   gridWidth: number;
   gridHeight: number;
   isTall?: boolean;
+  /**
+   * Overrides the computed size with a fixed square this many cells across.
+   * Growth stages use it so a seed stays seed-sized regardless of whether it
+   * grows into a tulip or an oak.
+   */
+  visualCells?: number;
 };
 
 /**
@@ -49,7 +55,17 @@ type VisualBoxInput = {
  * spills over the neighbours. `left` is negative — the offset that horizontally
  * centres the oversized box on the footprint.
  */
-export const computeVisualBox = ({ gridWidth, gridHeight, isTall }: VisualBoxInput) => {
+export const computeVisualBox = ({ gridWidth, gridHeight, isTall, visualCells }: VisualBoxInput) => {
+  // A fixed-size stage ignores the footprint entirely and renders as a square,
+  // still bottom-anchored and centred so it sits in the cell it was planted in.
+  if (visualCells !== undefined) {
+    return {
+      width: visualCells,
+      height: visualCells,
+      left: -(visualCells - gridWidth) / 2,
+    };
+  }
+
   const isLarge = gridHeight >= 2;
   const renderCols = isLarge ? 2 : gridWidth;
   const renderRows = isLarge ? 2 : gridHeight;
