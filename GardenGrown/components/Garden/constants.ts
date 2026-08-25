@@ -22,6 +22,18 @@ export const GRID_HEIGHT = CELL_SIZE * ROWS + 4;
 /** Drag an item below this screen Y to delete it. */
 export const DELETE_THRESHOLD = screenHeight - 150;
 
+/* INVENTORY DOCK
+=================================================== */
+/**
+ * The drawer's full height, and how much of it stays on screen when closed.
+ *
+ * These live here rather than in GardenInventory so anything riding along with
+ * the dock (the watering can) can position against them without importing the
+ * component that renders it.
+ */
+export const DRAWER_HEIGHT = 440;
+export const PEEK_HEIGHT = 120;
+
 /** How much larger art renders than the footprint it logically occupies. */
 export const VISUAL_OVERSIZE = 1.5;
 

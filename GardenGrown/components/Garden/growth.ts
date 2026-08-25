@@ -10,8 +10,9 @@ import type { GrowthStage } from './types';
 
 export const SEED_IMAGE = require('../../assets/Plants/seed.webp');
 
-// PLACEHOLDER: standing in until real sapling art is drawn. Swapping this one
-// line is the entire art migration — nothing else references the sapling image.
+// The Brussel Sprout art, retired as a placeable plant because it reads better
+// as a sapling. It is growth-only now — nothing else references it, so swapping
+// this one line is the entire migration if dedicated sapling art is drawn.
 export const SAPLING_IMAGE = require('../../assets/Plants/Brussel Sprout.webp');
 
 /**
@@ -30,36 +31,47 @@ export const STAGE_IMAGES = [SEED_IMAGE, SAPLING_IMAGE];
 const SEED_CELLS = 0.75;
 const SAPLING_CELLS = 1.25;
 
-/** `hoursRequired` is in hours, so express short demo intervals as fractions. */
+/** `hoursToNextStage` is in hours, so express short demo intervals as fractions. */
 const MINUTES = 1 / 60;
 
 /**
  * Demo-speed timings: long enough to watch happen, short enough to show.
  * Raise these to hours/days for a real release.
+ *
+ * These are per-stage DURATIONS, each measured from the moment that stage is
+ * watered — not deadlines from planting. Total time to maturity is their sum,
+ * so a woody plant takes SEED_TO_SAPLING + SAPLING_TO_MATURE and needs a
+ * watering for each leg.
  */
-export const SAPLING_AFTER_MINUTES = 1;
-export const MATURE_AFTER_MINUTES = 5;
+export const SEED_TO_SAPLING_MINUTES = 1;
+export const SAPLING_TO_MATURE_MINUTES = 5;
+export const SEED_TO_MATURE_MINUTES = 5;
+
+/** The last stage has nothing to grow into, so its duration is never read. */
+const FINAL_STAGE = 0;
 
 /**
  * Seed -> mature, for flowers and small plants. A tulip pushing up out of the
  * ground doesn't read as having a distinct sapling phase, so it doesn't get one.
+ *
+ * One watering, then SEED_TO_MATURE_MINUTES.
  */
 export const simpleGrowth = (matureImage: any): GrowthStage[] => [
-  { image: SEED_IMAGE, hoursRequired: 0, visualCells: SEED_CELLS },
-  { image: matureImage, hoursRequired: MATURE_AFTER_MINUTES * MINUTES },
+  { image: SEED_IMAGE, hoursToNextStage: SEED_TO_MATURE_MINUTES * MINUTES, visualCells: SEED_CELLS },
+  { image: matureImage, hoursToNextStage: FINAL_STAGE },
 ];
 
 /**
  * Seed -> sapling -> mature, for trees and the larger woody plants where popping
  * straight from a seed to a full canopy looks abrupt.
  *
- * Stages must stay sorted ascending by `hoursRequired`; `advanceGrowth()` walks
- * them in order and takes the last one whose threshold has passed.
+ * Two waterings: one to raise the sapling, another to bring it to maturity.
+ * Each stage's clock starts only when that watering happens.
  */
 export const woodyGrowth = (matureImage: any): GrowthStage[] => [
-  { image: SEED_IMAGE, hoursRequired: 0, visualCells: SEED_CELLS },
-  { image: SAPLING_IMAGE, hoursRequired: SAPLING_AFTER_MINUTES * MINUTES, visualCells: SAPLING_CELLS },
-  { image: matureImage, hoursRequired: MATURE_AFTER_MINUTES * MINUTES },
+  { image: SEED_IMAGE, hoursToNextStage: SEED_TO_SAPLING_MINUTES * MINUTES, visualCells: SEED_CELLS },
+  { image: SAPLING_IMAGE, hoursToNextStage: SAPLING_TO_MATURE_MINUTES * MINUTES, visualCells: SAPLING_CELLS },
+  { image: matureImage, hoursToNextStage: FINAL_STAGE },
 ];
 
 /**

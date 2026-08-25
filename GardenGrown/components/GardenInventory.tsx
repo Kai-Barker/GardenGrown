@@ -5,6 +5,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SharedValue, runOnJS } from 'react-native-reanimated';
 import { getEntriesByKind } from './Garden/catalog';
+import { DRAWER_HEIGHT, PEEK_HEIGHT } from './Garden/constants';
+import WateringCan, { CAN_RESERVE } from './Garden/WateringCan';
 import type { CatalogEntry, ObjectKind } from './Garden/types';
 
 const CATEGORY_TABS: { key: ObjectKind; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string }[] = [
@@ -13,22 +15,44 @@ const CATEGORY_TABS: { key: ObjectKind; icon: React.ComponentProps<typeof Materi
   { key: 'decoration', icon: 'gate', label: 'Decoration' },
 ];
 
-const DRAWER_HEIGHT = 440;
-const PEEK_HEIGHT = 120;
+/**
+ * How far down the drawer slides when closed, leaving PEEK_HEIGHT of dock on
+ * screen.
+ *
+ * Unaffected by CAN_RESERVE: the container grew by that amount but is
+ * bottom-anchored and pads the same amount at the top, so the drawer content
+ * still starts exactly DRAWER_HEIGHT above the screen bottom.
+ */
 const CLOSED_TRANSLATE_Y = DRAWER_HEIGHT - PEEK_HEIGHT;
 
 type GardenInventoryProps = {
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
   onDragStart: (item: CatalogEntry, startX: number, startY: number) => void;
+  onDragMove: (x: number, y: number) => void;
   onDragEnd: (endX: number, endY: number) => void;
   gardenName: string;
   isDropdownOpen: boolean;
   onBack: () => void;
   onOpenDropdown: () => void;
+  /** Watering can — rendered here so it rides the dock's animation. */
+  onWaterDragStart: () => void;
+  onWaterDragEnd: (x: number, y: number) => void;
 };
 
-export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd, gardenName, isDropdownOpen, onBack, onOpenDropdown }: GardenInventoryProps) {
+export function GardenInventory({
+  dragX,
+  dragY,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  gardenName,
+  isDropdownOpen,
+  onBack,
+  onOpenDropdown,
+  onWaterDragStart,
+  onWaterDragEnd,
+}: GardenInventoryProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ObjectKind>('plant');
   const isExpandedRef = useRef(isExpanded);
@@ -103,13 +127,28 @@ export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd, gardenNa
   ).current;
 
   return (
-    <Animated.View 
+    <Animated.View
       style={{
         transform: [{ translateY: panY }],
-        height: DRAWER_HEIGHT,
+        // Taller than the drawer itself, reserving room above it for the
+        // watering can. The extra space is transparent and box-none, so it
+        // neither shows nor blocks touches to the garden behind it.
+        height: DRAWER_HEIGHT + CAN_RESERVE,
+        paddingTop: CAN_RESERVE,
       }}
       className="absolute bottom-0 left-0 right-0 z-30"
+      pointerEvents="box-none"
     >
+      {/* Rendered inside the animated view so it inherits translateY and rides
+          up and down with the dock, within the reserved space above it. */}
+      <WateringCan
+        dragX={dragX}
+        dragY={dragY}
+        onDragStart={onWaterDragStart}
+        onDragMove={onDragMove}
+        onDragEnd={onWaterDragEnd}
+      />
+
       <View {...panResponder.panHandlers}>
         <View className="items-center -mb-1 z-10">
           <Pressable
@@ -214,6 +253,7 @@ export function GardenInventory({ dragX, dragY, onDragStart, onDragEnd, gardenNa
                   snapTo(CLOSED_TRANSLATE_Y, false);
                   onDragStart(draggedItem, x, y);
                 }}
+                onDragMove={onDragMove}
                 onDragEnd={onDragEnd}
               />
             </View>
@@ -229,10 +269,11 @@ type InventoryDraggableProps = {
   dragX: SharedValue<number>;
   dragY: SharedValue<number>;
   onDragStart: (item: CatalogEntry, x: number, y: number) => void;
+  onDragMove: (x: number, y: number) => void;
   onDragEnd: (x: number, y: number) => void;
 };
 
-function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragEnd }: InventoryDraggableProps) {
+function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragMove, onDragEnd }: InventoryDraggableProps) {
   const pan = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart((e) => {
@@ -243,6 +284,7 @@ function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragEnd }: Inve
     .onUpdate((e) => {
       dragX.value = e.absoluteX;
       dragY.value = e.absoluteY;
+      runOnJS(onDragMove)(e.absoluteX, e.absoluteY);
     })
     .onEnd((e) => {
       runOnJS(onDragEnd)(e.absoluteX, e.absoluteY);

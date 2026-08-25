@@ -250,23 +250,6 @@ export default function ProfileScreen() {
 
             <ThickDivider />
 
-            {/* Settings Section */}
-            <View className="relative w-full mt-2 mb-8">
-              <View className="absolute w-full h-full bg-[#4A4A4A] rounded-xl top-1 left-1" />
-              <View className="relative flex-row items-center justify-between px-4 py-3 bg-[#545E75] border-2 border-[#4A4A4A] rounded-xl w-full">
-                <Text className="font-zenmaru text-xl text-[#A3C4A3]">
-                  Notifications
-                </Text>
-                <Switch
-                  trackColor={{ false: '#374151', true: '#A3C4A3' }}
-                  thumbColor={Platform.OS === 'ios' ? undefined : '#F4EFE6'}
-                  ios_backgroundColor="#374151"
-                  onValueChange={setNotifications}
-                  value={notifications}
-                />
-              </View>
-            </View>
-
             {/* Logout Button */}
             <Pressable
               onPress={handleSignOut}

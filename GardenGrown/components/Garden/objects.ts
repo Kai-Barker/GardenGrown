@@ -101,6 +101,7 @@ export abstract class PlacedObject {
           plantedAt: data.plantedAt,
           lastWateredAt: data.lastWateredAt,
           growthStage: data.growthStage,
+          stageStartedAt: data.stageStartedAt,
         });
       case 'decoration':
         return new DecorationObject(data.instanceId, entry, data.col, data.row);
@@ -120,6 +121,7 @@ type PlantState = {
   plantedAt?: number;
   lastWateredAt?: number;
   growthStage?: number;
+  stageStartedAt?: number;
 };
 
 export class PlantObject extends PlacedObject {
@@ -128,6 +130,12 @@ export class PlantObject extends PlacedObject {
   plantedAt: number;
   lastWateredAt: number;
   growthStage: number;
+
+  /**
+   * When the current stage's clock started. Undefined means thirsty — the plant
+   * is waiting to be watered and isn't growing.
+   */
+  stageStartedAt?: number;
 
   constructor(
     instanceId: string,
@@ -146,6 +154,7 @@ export class PlantObject extends PlacedObject {
     // mature rather than 0, so nobody's already-grown garden regresses to
     // sprouts the moment stage art ships.
     this.growthStage = state.growthStage ?? PlantObject.finalStage(entry);
+    this.stageStartedAt = state.stageStartedAt;
   }
 
   private static finalStage(entry: CatalogEntry): number {
@@ -177,41 +186,68 @@ export class PlantObject extends PlacedObject {
   }
 
   /**
-   * Records a watering. Implemented now so the data model is complete; no
-   * caller wires this up until the growth milestone.
+   * Waiting for water: not fully grown, and its clock isn't running. A mature
+   * plant is never thirsty — it's finished, not waiting.
    */
-  water(now: number = Date.now()): this {
-    this.lastWateredAt = now;
-    return this;
+  get isThirsty(): boolean {
+    return !this.isMature && this.stageStartedAt === undefined;
   }
 
   /**
-   * Advances the growth stage based on elapsed time since planting. A no-op
-   * while every catalog entry has empty growthStages, which is the case today.
+   * Starts the current stage's clock. Returns whether it actually did anything,
+   * so callers can skip a pointless re-render and Firestore write.
+   *
+   * One watering per stage: a plant that's already growing, or fully grown,
+   * ignores further watering rather than restarting its timer.
+   */
+  water(now: number = Date.now()): boolean {
+    if (this.isMature || this.stageStartedAt !== undefined) return false;
+
+    this.stageStartedAt = now;
+    this.lastWateredAt = now;
+    return true;
+  }
+
+  /**
+   * Advances one stage if the current stage's watered duration has elapsed.
+   *
+   * Advancing clears the clock, so the next stage needs its own watering — an
+   * oak goes seed -> (water) -> sapling -> (water) -> mature. Surplus time past
+   * the threshold is deliberately discarded rather than carried forward, since
+   * rolling it over would let one watering cascade a plant through several
+   * stages at once.
    */
   advanceGrowth(now: number = Date.now()): this {
     const stages = this.entry.growthStages;
     if (!stages?.length) return this;
 
-    const elapsedHours = (now - this.plantedAt) / (1000 * 60 * 60);
+    // Not watered, or nothing left to grow into.
+    if (this.stageStartedAt === undefined || this.isMature) return this;
 
-    let stage = 0;
-    for (let i = 0; i < stages.length; i++) {
-      if (elapsedHours >= stages[i].hoursRequired) stage = i;
-    }
+    const durationMs = stages[this.growthStage].hoursToNextStage * 60 * 60 * 1000;
+    if (now - this.stageStartedAt < durationMs) return this;
 
-    // Growth only moves forward.
-    this.growthStage = Math.max(this.growthStage, stage);
+    this.growthStage += 1;
+    this.stageStartedAt = undefined;
     return this;
   }
 
   toData(): PlacedObjectData {
-    return {
+    const data: PlacedObjectData = {
       ...super.toData(),
       plantedAt: this.plantedAt,
       lastWateredAt: this.lastWateredAt,
       growthStage: this.growthStage,
     };
+
+    // Firestore rejects undefined values outright, so a thirsty plant omits the
+    // key rather than writing it empty. Absent and undefined read back the same
+    // through the constructor.
+    if (this.stageStartedAt !== undefined) {
+      data.stageStartedAt = this.stageStartedAt;
+    }
+
+    return data;
   }
 }
 

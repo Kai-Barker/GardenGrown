@@ -30,6 +30,8 @@ import { getEntry } from '../components/Garden/catalog';
 import { GROWTH_TICK_MS } from '../components/Garden/growth';
 import { terrainIdFromCatalogId } from '../components/Garden/terrain';
 import TerrainLayer from '../components/Garden/TerrainLayer';
+import DropHighlight from '../components/Garden/DropHighlight';
+import { WATERING_CAN_IMAGE } from '../components/Garden/WateringCan';
 import type { CatalogEntry, PlacedObjectData, TerrainMap } from '../components/Garden/types';
 import { auth } from '../firebase';
 import {
@@ -40,19 +42,91 @@ import {
   deleteGarden,
 } from '../services/garden';
 
+/** What's being dragged over the garden right now. */
+type Ghost =
+  | { kind: 'catalog'; entry: CatalogEntry }
+  | { kind: 'can' };
+
+/** Size of the dragged watering can, in grid cells. */
+const CAN_GHOST_CELLS = 1.5;
+
+/** Colour of the hint shown over a plant that's waiting to be watered. */
+const THIRSTY_COLOR = '#3B82F6';
+
+/** The cell a drag is currently over, and whether dropping there does anything. */
+type DropTarget = { col: number; row: number; valid: boolean };
+
+/**
+ * Converts a screen touch into a grid cell, given the grid's measured rect and
+ * the ScrollView's current zoom.
+ *
+ * measure() mixes two coordinate conventions inside a zoomed ScrollView, which
+ * is what made this subtle:
+ *
+ *   - pageX/pageY ARE transformed — real screen coords, and strongly negative
+ *     at high zoom because the grid's origin is scrolled off-screen.
+ *   - width/height are NOT transformed — they stay at the layout size
+ *     (measured 342 = GRID_WIDTH at 3x zoom).
+ *
+ * So the on-screen size has to be reconstructed as width * zoom. Comparing a
+ * screen touch against the raw width instead makes the bounds check reject
+ * every touch while zoomed, silently refusing all placement.
+ */
+const screenToCell = (
+  absoluteX: number,
+  absoluteY: number,
+  rect: { pageX: number; pageY: number; width: number; height: number },
+  zoom: number,
+) => {
+  const scale = zoom > 0 ? zoom : 1;
+
+  // The grid's actual on-screen footprint.
+  const screenWidth = rect.width * scale;
+  const screenHeight = rect.height * scale;
+  const cell = CELL_SIZE * scale;
+
+  return {
+    col: Math.floor((absoluteX - rect.pageX) / cell),
+    row: Math.floor((absoluteY - rect.pageY) / cell),
+    inside:
+      absoluteX >= rect.pageX && absoluteX <= rect.pageX + screenWidth &&
+      absoluteY >= rect.pageY && absoluteY <= rect.pageY + screenHeight,
+  };
+};
+
+/**
+ * "col,row" -> instanceId, for collision checks. Objects that don't block
+ * (terrain) are skipped, so a plant can be placed on a painted cell.
+ *
+ * Module-level so gesture callbacks can rebuild it from a ref instead of
+ * closing over the memoised copy, which would be stale by the time they run.
+ */
+const buildOccupancy = (items: PlacedObject[]): Record<string, string> => {
+  const map: Record<string, string> = {};
+  items.forEach(item => {
+    if (!item.blocksPlacement) return;
+    item.occupiedCells().forEach(key => {
+      map[key] = item.instanceId;
+    });
+  });
+  return map;
+};
+
 /* DRAGGABLE OBJECT COMPONENT
 =================================================== */
 type DraggableObjectProps = {
   item: PlacedObject;
   onSnap: (id: string, col: number, row: number) => void;
   onDelete: (id: string) => void;
-  onWater: (id: string) => void;
+  onMoveStart: (instanceId: string) => void;
+  onDragMove: (x: number, y: number) => void;
+  onMoveEnd: () => void;
   setScrollEnabled: (enabled: boolean) => void;
   occupiedCells: Record<string, string>;
   zoomScale: SharedValue<number>;
 };
 
-function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
+function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMoveEnd, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
   const isDragging = useSharedValue(false);
@@ -76,7 +150,10 @@ function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, oc
   const panGesture = Gesture.Pan()
     .onStart(() => {
       isDragging.value = true;
-      runOnJS(setScrollEnabled)(false); 
+      runOnJS(setScrollEnabled)(false);
+      // Only the id crosses the worklet boundary — runOnJS serialises its
+      // arguments, and a PlacedObject instance can't survive that.
+      runOnJS(onMoveStart)(instanceId);
       startX.value = translateX.value;
       startY.value = translateY.value;
     })
@@ -84,10 +161,12 @@ function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, oc
       const currentScale = (zoomScale && zoomScale.value > 0) ? zoomScale.value : 1;
       translateX.value = startX.value + (event.translationX / currentScale);
       translateY.value = startY.value + (event.translationY / currentScale);
+      runOnJS(onDragMove)(event.absoluteX, event.absoluteY);
     })
     .onEnd((event) => {
       isDragging.value = false;
-      runOnJS(setScrollEnabled)(true); 
+      runOnJS(setScrollEnabled)(true);
+      runOnJS(onMoveEnd)(); 
 
       if (event.absoluteY > DELETE_THRESHOLD) {
         runOnJS(Vibration.vibrate)([0, 50, 100, 50]);
@@ -125,17 +204,6 @@ function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, oc
       }
     });
 
-  // Tapping a plant waters it. Raced against the pan so a drag never also
-  // registers as a tap; only plants respond, so decorations behave as before.
-  const isPlant = item.kind === 'plant';
-  const tapGesture = Gesture.Tap()
-    .enabled(isPlant)
-    .onEnd((_event, success) => {
-      if (success) runOnJS(onWater)(instanceId);
-    });
-
-  const gesture = Gesture.Exclusive(panGesture, tapGesture);
-
   // Art renders larger than its footprint and bottom-anchored to it, so a
   // plant's feet stay in its cell while foliage spills over the neighbours.
   // An early growth stage overrides the size so a seed stays seed-sized.
@@ -149,8 +217,12 @@ function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, oc
   const visualHeight = CELL_SIZE * box.height;
   const leftOffset = CELL_SIZE * box.left;
 
+  // A thirsty plant looks identical to a growing one, so it gets a hint telling
+  // the player it's waiting on the watering can.
+  const isThirsty = item instanceof PlantObject && item.isThirsty;
+
   return (
-    <GestureDetector gesture={gesture}>
+    <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle}>
         <View style={{
           position: 'absolute',
@@ -170,6 +242,16 @@ function DraggableObject({ item, onSnap, onDelete, onWater, setScrollEnabled, oc
             transition={200}
             cachePolicy="memory-disk"
           />
+
+          {isThirsty && (
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', top: -CELL_SIZE * 0.30 }}
+              className="opacity-80"
+            >
+              <MaterialCommunityIcons name="water-outline" size={CELL_SIZE * 0.45} color={THIRSTY_COLOR} />
+            </View>
+          )}
         </View>
       </Animated.View>
     </GestureDetector>
@@ -191,7 +273,11 @@ export default function GardenScreen() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
-  const [activeGhost, setActiveGhost] = useState<CatalogEntry | null>(null);
+  // What's currently being dragged over the garden: either a catalog entry
+  // being placed, or the watering can. The can isn't placeable, so it gets its
+  // own case rather than a fake catalog entry.
+  const [activeGhost, setActiveGhost] = useState<Ghost | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [placedItems, setPlacedItems] = useState<PlacedObject[]>([]);
   const [terrain, setTerrain] = useState<TerrainMap>({});
 
@@ -203,23 +289,54 @@ export default function GardenScreen() {
   useEffect(() => { placedItemsRef.current = placedItems; }, [placedItems]);
   useEffect(() => { terrainRef.current = terrain; }, [terrain]);
 
+  // What's being dragged, readable from the gesture callbacks without risking a
+  // stale closure — those fire via runOnJS and hold the props from the render
+  // that built the gesture, which is before any drag began.
+  const activeGhostRef = useRef<Ghost | null>(null);
+
+  /** Instance being repositioned, so it doesn't block itself in the highlight. */
+  const movingIdRef = useRef<string | null>(null);
+
+  /**
+   * Always set the ghost through this, never setActiveGhost directly: the ref
+   * has to update synchronously, because a gesture callback may read it in the
+   * same tick and an effect wouldn't have run yet.
+   */
+  const updateGhost = (ghost: Ghost | null) => {
+    activeGhostRef.current = ghost;
+    setActiveGhost(ghost);
+  };
+
   const gridRef = useRef<View>(null);
   const zoomScaleRef = useRef(1);
+
+  // The grid's page position, cached when a drag starts. measure() is an async
+  // native call, so the live drop highlight can't afford one per frame.
+  const gridBoundsRef = useRef<{ pageX: number; pageY: number; width: number; height: number } | null>(null);
+
+  const cacheGridBounds = () => {
+    gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
+      if (width && height) gridBoundsRef.current = { pageX, pageY, width, height };
+    });
+  };
   const activeDragX = useSharedValue(0);
   const activeDragY = useSharedValue(0);
   const zoomScale = useSharedValue(1);
 
   // --- GHOST VISUAL SIZING & ANIMATED STYLE ---
-  // Terrain tiles fill exactly one cell; everything else previews at the same
-  // oversized scale it'll render at once placed.
-  const isGhostTerrain = activeGhost?.kind === 'terrain';
-  const ghostBox = isGhostTerrain
-    ? { width: 1, height: 1 }
-    : computeVisualBox({
-        gridWidth: activeGhost?.gridWidth ?? 1,
-        gridHeight: activeGhost?.gridHeight ?? 1,
-        isTall: activeGhost?.isTall,
-      });
+  // Terrain tiles fill exactly one cell, the can previews at a fixed size, and
+  // everything else previews at the oversized scale it'll render at once placed.
+  const ghostEntry = activeGhost?.kind === 'catalog' ? activeGhost.entry : null;
+  const isGhostTerrain = ghostEntry?.kind === 'terrain';
+  const ghostBox = activeGhost?.kind === 'can'
+    ? { width: CAN_GHOST_CELLS, height: CAN_GHOST_CELLS }
+    : isGhostTerrain
+      ? { width: 1, height: 1 }
+      : computeVisualBox({
+          gridWidth: ghostEntry?.gridWidth ?? 1,
+          gridHeight: ghostEntry?.gridHeight ?? 1,
+          isTall: ghostEntry?.isTall,
+        });
 
   const ghostVisualWidth = CELL_SIZE * ghostBox.width;
   const ghostVisualHeight = CELL_SIZE * ghostBox.height;
@@ -419,18 +536,7 @@ export default function GardenScreen() {
     }
   };
 
-  // "col,row" -> instanceId, for collision checks. Objects that don't block
-  // (terrain) are skipped, so a plant can be placed on a painted cell.
-  const occupiedCells = useMemo(() => {
-    const map: Record<string, string> = {};
-    placedItems.forEach(item => {
-      if (!item.blocksPlacement) return;
-      item.occupiedCells().forEach(key => {
-        map[key] = item.instanceId;
-      });
-    });
-    return map;
-  }, [placedItems]);
+  const occupiedCells = useMemo(() => buildOccupancy(placedItems), [placedItems]);
 
   const handleSnap = (id: string, newCol: number, newRow: number) => {
     setPlacedItems(prev => {
@@ -450,19 +556,57 @@ export default function GardenScreen() {
     });
   };
 
-  /** Records a watering. Growth is time-based for now, so this only logs when. */
+  /**
+   * Waters the plant with the given id, starting its current stage's clock.
+   * Silently does nothing for anything that isn't a thirsty plant.
+   */
   const handleWater = (id: string) => {
     setPlacedItems(prev => {
       const target = prev.find(item => item.instanceId === id);
       if (!(target instanceof PlantObject)) return prev;
 
+      // Already growing, or fully grown — a buzz says "not that one" without
+      // costing a re-render or a write.
+      if (!target.water()) {
+        Vibration.vibrate([0, 50, 50, 50]);
+        return prev;
+      }
+
       Vibration.vibrate(30);
-      target.water();
 
       // water() mutates in place; the new array is what re-renders.
       const updated = [...prev];
       saveGardenData(updated);
       return updated;
+    });
+  };
+
+  /**
+   * Resolves a watering-can drop to the plant underneath it. Uses the occupancy
+   * map so dropping anywhere on a multi-cell plant's footprint counts.
+   */
+  const handleWaterDragEnd = (absoluteX: number, absoluteY: number) => {
+    // Every cleanup happens here, never inside the measure() callback below:
+    // that callback doesn't fire if the view can't be measured, and a missed
+    // setIsScrollEnabled(true) would leave the garden permanently frozen.
+    setDropTarget(null);
+    updateGhost(null);
+    setIsScrollEnabled(true);
+
+    gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
+      if (!width || !height) return;
+
+      const hit = screenToCell(absoluteX, absoluteY, { pageX, pageY, width, height }, zoomScaleRef.current);
+
+      if (hit.inside) {
+        // Resolved from the ref rather than the occupiedCells memo: this runs
+        // from a gesture callback holding an older render's closure.
+        const key = cellKey(hit.col, hit.row);
+        const target = placedItemsRef.current.find(
+          item => item.blocksPlacement && item.occupiedCells().includes(key)
+        );
+        if (target) handleWater(target.instanceId);
+      }
     });
   };
 
@@ -516,43 +660,142 @@ export default function GardenScreen() {
   };
 
   const handleInventoryDragStart = (entry: CatalogEntry) => {
-    setActiveGhost(entry);
+    updateGhost({ kind: 'catalog', entry });
+    cacheGridBounds();
+    // Lock the ScrollView for the duration of the drag. The grid bounds are
+    // cached here and measure()'s pageX/pageY are screen coords, so a pan or
+    // pinch mid-drag would leave the cache — and the highlight — pointing at
+    // the wrong place.
+    setIsScrollEnabled(false);
+  };
+
+  /**
+   * An already-placed object being repositioned. The highlight treats it like a
+   * catalog drag so the footprint maths is shared, but records the instance so
+   * the object doesn't collide with the cells it's currently sitting in.
+   */
+  const handleMoveStart = (instanceId: string) => {
+    const item = placedItemsRef.current.find(i => i.instanceId === instanceId);
+    if (!item) return;
+
+    movingIdRef.current = instanceId;
+    updateGhost({ kind: 'catalog', entry: item.entry });
+    cacheGridBounds();
+  };
+
+  const handleMoveEnd = () => {
+    movingIdRef.current = null;
+    updateGhost(null);
+    setDropTarget(null);
+  };
+
+  /**
+   * Tracks which cell the finger is over mid-drag, and whether releasing there
+   * would do anything — the highlight's colour is that answer.
+   *
+   * Called on every gesture frame, so it bails early whenever the result would
+   * be identical to what's already on screen; a drag crosses many pixels per
+   * cell, and re-rendering the grid on each one would be wasteful.
+   */
+  const handleDragMove = (absoluteX: number, absoluteY: number) => {
+    const bounds = gridBoundsRef.current;
+    const ghost = activeGhostRef.current;
+    if (!bounds || !ghost) return;
+
+    // Same conversion the drop handlers use, so the highlight can't disagree
+    // with where the item actually lands.
+    const hit = screenToCell(absoluteX, absoluteY, bounds, zoomScaleRef.current);
+
+    if (!hit.inside) {
+      setDropTarget(prev => (prev === null ? prev : null));
+      return;
+    }
+
+    const entry = ghost.kind === 'catalog' ? ghost.entry : null;
+    const spanCols = entry?.gridWidth ?? 1;
+    const spanRows = entry?.gridHeight ?? 1;
+
+    // Clamp exactly as the drop handlers do, so the highlight sits on the cell
+    // the item would actually land on rather than under the finger.
+    const col = Math.max(0, Math.min(hit.col, COLUMNS - spanCols));
+    const row = Math.max(0, Math.min(hit.row, ROWS - spanRows));
+
+    const occupied = buildOccupancy(placedItemsRef.current);
+
+    let valid: boolean;
+    if (ghost.kind === 'can') {
+      // Only a thirsty plant can be watered — anything else is a no-op.
+      const targetId = occupied[cellKey(col, row)];
+      const target = placedItemsRef.current.find(i => i.instanceId === targetId);
+      valid = target instanceof PlantObject && target.isThirsty;
+    } else if (entry?.kind === 'terrain') {
+      // Terrain paints over whatever's there, so it's always a valid drop.
+      valid = true;
+    } else {
+      // An object being repositioned mustn't collide with the cells it's
+      // currently occupying, or every move would read as invalid.
+      const movingId = movingIdRef.current;
+
+      valid = true;
+      for (let c = 0; c < spanCols && valid; c++) {
+        for (let r = 0; r < spanRows && valid; r++) {
+          const blocker = occupied[cellKey(col + c, row + r)];
+          if (blocker && blocker !== movingId) valid = false;
+        }
+      }
+    }
+
+    setDropTarget(prev =>
+      prev && prev.col === col && prev.row === row && prev.valid === valid
+        ? prev
+        : { col, row, valid }
+    );
   };
 
   const handleInventoryDragEnd = (absoluteX: number, absoluteY: number) => {
-    const entry = activeGhost;
+    // Unconditional cleanup, before any early return and outside the measure()
+    // callback — missing setIsScrollEnabled(true) on any path would leave the
+    // garden permanently unscrollable.
+    setDropTarget(null);
+    setIsScrollEnabled(true);
+
+    // Read through the ref, not state: this runs from a gesture callback whose
+    // closure was captured when the gesture was built — a render where the drag
+    // hadn't started and activeGhost was still null.
+    const ghost = activeGhostRef.current;
+    const entry = ghost?.kind === 'catalog' ? ghost.entry : null;
+
+    // Cleared up front too: if measure() never calls back, a ghost cleared only
+    // inside it would stay stuck to the screen.
+    updateGhost(null);
+
     if (!entry) return;
 
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
       if (!width || !height) return;
 
-      if (
-        absoluteX >= pageX && absoluteX <= pageX + width &&
-        absoluteY >= pageY && absoluteY <= pageY + height
-      ) {
-        const currentZoom = zoomScaleRef.current || 1;
-        const scaledCellSize = CELL_SIZE * currentZoom;
+      const hit = screenToCell(absoluteX, absoluteY, { pageX, pageY, width, height }, zoomScaleRef.current);
 
-        const relativeX = absoluteX - pageX;
-        const relativeY = absoluteY - pageY;
-
+      if (hit.inside) {
         const ghostLogicalWidth = entry.gridWidth ?? 1;
         const ghostLogicalHeight = entry.gridHeight ?? 1;
 
-        let targetCol = Math.floor(relativeX / scaledCellSize);
-        let targetRow = Math.floor(relativeY / scaledCellSize);
-        targetCol = Math.max(0, Math.min(targetCol, COLUMNS - ghostLogicalWidth));
-        targetRow = Math.max(0, Math.min(targetRow, ROWS - ghostLogicalHeight));
+        const targetCol = Math.max(0, Math.min(hit.col, COLUMNS - ghostLogicalWidth));
+        const targetRow = Math.max(0, Math.min(hit.row, ROWS - ghostLogicalHeight));
 
         if (entry.kind === 'terrain') {
           // Terrain paints its own layer, so it never collides with what's
           // already on the cell — planting on grass is the whole point.
           handlePaintTerrain(entry.id, targetCol, targetRow);
         } else {
+          // Built from the ref, not the occupiedCells memo — see the note in
+          // handleInventoryDragEnd about this closure being stale.
+          const occupied = buildOccupancy(placedItemsRef.current);
+
           let isBlocked = false;
           for (let c = 0; c < ghostLogicalWidth; c++) {
             for (let r = 0; r < ghostLogicalHeight; r++) {
-              if (occupiedCells[cellKey(targetCol + c, targetRow + r)]) {
+              if (occupied[cellKey(targetCol + c, targetRow + r)]) {
                 isBlocked = true;
               }
             }
@@ -563,6 +806,8 @@ export default function GardenScreen() {
           } else {
             setPlacedItems(prev => {
               const instanceId = Date.now().toString();
+              // No stageStartedAt: a new plant starts thirsty and won't grow
+              // until it's watered.
               const newItem = entry.kind === 'plant'
                 ? new PlantObject(instanceId, entry, targetCol, targetRow, {
                     plantedAt: Date.now(),
@@ -578,7 +823,6 @@ export default function GardenScreen() {
           }
         }
       }
-      setActiveGhost(null);
     });
   };
 
@@ -679,9 +923,16 @@ export default function GardenScreen() {
             width: ghostVisualWidth,
             height: ghostVisualHeight
           }]}>
-            {activeGhost.image ? (
+            {activeGhost.kind === 'can' ? (
               <Image
-                source={activeGhost.image}
+                source={WATERING_CAN_IMAGE}
+                style={{ width: '100%', height: '100%', opacity: 0.9 }}
+                contentFit="contain"
+                cachePolicy="memory-disk"
+              />
+            ) : ghostEntry?.image ? (
+              <Image
+                source={ghostEntry.image}
                 style={{ width: '100%', height: '100%', opacity: 0.8 }}
                 contentFit={isGhostTerrain ? 'cover' : 'contain'}
                 cachePolicy="memory-disk"
@@ -734,6 +985,14 @@ export default function GardenScreen() {
                     above terrain by being a later sibling. */}
                 <TerrainLayer terrain={terrain} />
 
+                {dropTarget && (
+                  <DropHighlight
+                    col={dropTarget.col}
+                    row={dropTarget.row}
+                    valid={dropTarget.valid}
+                  />
+                )}
+
                 <View className="absolute inset-0 flex-row flex-wrap pointer-events-none">
                   {Array.from({ length: TOTAL_CELLS }).map((_, index) => (
                     <View key={`cell-${index}`} style={{ width: `${100 / COLUMNS}%`, height: CELL_SIZE }} className="border border-[#4A4A4A]/10" />
@@ -746,7 +1005,9 @@ export default function GardenScreen() {
                     item={item}
                     onSnap={handleSnap}
                     onDelete={handleDelete}
-                    onWater={handleWater}
+                    onMoveStart={handleMoveStart}
+                    onDragMove={handleDragMove}
+                    onMoveEnd={handleMoveEnd}
                     setScrollEnabled={setIsScrollEnabled}
                     occupiedCells={occupiedCells}
                     zoomScale={zoomScale}
@@ -756,15 +1017,24 @@ export default function GardenScreen() {
             </ScrollView>
           </View>
 
+          {/* The watering can is rendered by the inventory so it rides the
+              dock's open/close animation. */}
           <GardenInventory
             dragX={activeDragX}
             dragY={activeDragY}
             onDragStart={handleInventoryDragStart}
+            onDragMove={handleDragMove}
             onDragEnd={handleInventoryDragEnd}
             gardenName={currentGardenName}
             isDropdownOpen={isDropdownOpen}
             onBack={() => router.back()}
             onOpenDropdown={() => setIsDropdownOpen(true)}
+            onWaterDragStart={() => {
+              updateGhost({ kind: 'can' });
+              cacheGridBounds();
+              setIsScrollEnabled(false);
+            }}
+            onWaterDragEnd={handleWaterDragEnd}
           />
 
         </SafeAreaView>

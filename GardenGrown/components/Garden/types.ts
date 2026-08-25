@@ -13,12 +13,18 @@ export type TerrainId = 'grass' | 'water' | 'sand';
 
 /**
  * One step in a plant's life. Empty/absent growthStages on a catalog entry means
- * the plant is mature the moment it's placed, which is every plant today.
+ * the plant is mature the moment it's placed.
  */
 export type GrowthStage = {
   image: any;
-  /** hours of (watered) growth after planting before this stage is reached */
-  hoursRequired: number;
+  /**
+   * How long this stage lasts once watered, in hours — a duration, not a
+   * deadline. Total time to maturity is the sum of every stage's value, and
+   * each stage's clock only starts when the plant is watered.
+   *
+   * Unused on the final stage, since nothing follows it.
+   */
+  hoursToNextStage: number;
   /**
    * Renders this stage at a fixed size in cells instead of the plant's own
    * footprint. A seed is a seed whether it grows into a tulip or an oak, so
@@ -54,6 +60,13 @@ export type PlacedObjectData = {
   plantedAt?: number;
   lastWateredAt?: number;
   growthStage?: number;
+  /**
+   * When the current stage's clock started — i.e. when the plant was last
+   * watered. Undefined means thirsty: the plant is waiting for water and isn't
+   * growing. Storing the time rather than a bare "is watered" flag is what lets
+   * growth accrue while the app is closed.
+   */
+  stageStartedAt?: number;
 };
 
 /** "col,row" -> terrain id. One tile per cell, stored flat for cheap per-cell writes. */
