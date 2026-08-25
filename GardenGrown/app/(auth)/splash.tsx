@@ -33,10 +33,17 @@ export default function Splash() {
               title="Log In" 
               onPress={() => router.push('/(auth)/login')} 
             />
-            <AuthButton 
-              title="Sign Up" 
-              variant="secondary" 
-              onPress={() => router.push('/(auth)/signup')} 
+            <AuthButton
+              title="Sign Up"
+              variant="secondary"
+              onPress={() => router.push('/(auth)/signup')}
+            />
+            {/* Replays the first-run tour. push, not replace — the tour exits
+                with a replace back to here, so the stack stays flat. */}
+            <AuthButton
+              title="How It Works"
+              variant="secondary"
+              onPress={() => router.push('/(auth)/onboarding')}
             />
           </View>
 

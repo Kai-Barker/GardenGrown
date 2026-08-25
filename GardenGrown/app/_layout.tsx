@@ -9,6 +9,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { CATALOG } from '../components/Garden/catalog';
 import { STAGE_IMAGES } from '../components/Garden/growth';
+import { hasCompletedOnboarding } from '../services/onboarding';
 
 import "../global.css";
 
@@ -22,6 +23,11 @@ export default function RootLayout() {
   // Auth State
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<any>(null);
+
+  // Has this device already been through the onboarding tour?
+  // null means "not read yet" — a third loading signal alongside fonts and auth,
+  // because a logged-out user's destination depends on the answer.
+  const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
 
   // Load the fonts
   const [fontsLoaded, fontError] = useFonts({
@@ -38,6 +44,12 @@ export default function RootLayout() {
     });
 
     return unsubscribe;
+  }, []);
+
+  // 1b. Read the first-run flag. hasCompletedOnboarding never rejects — it
+  // resolves true if storage is unreadable — so there is no failure branch here.
+  useEffect(() => {
+    hasCompletedOnboarding().then(setOnboardingSeen);
   }, []);
 
   // Warm every piece of garden art into expo-image's cache while the splash
@@ -58,17 +70,19 @@ export default function RootLayout() {
     });
   }, []);
 
-  // 2. Hide Splash Screen ONLY when both fonts are loaded AND Firebase initialized
+  // 2. Hide Splash Screen ONLY when fonts are loaded, Firebase is initialized,
+  // AND we know whether to open on the tour — otherwise the first frame after
+  // the splash can be the wrong screen, which then visibly swaps.
   useEffect(() => {
-    if ((fontsLoaded || fontError) && !initializing) {
+    if ((fontsLoaded || fontError) && !initializing && onboardingSeen !== null) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError, initializing]);
+  }, [fontsLoaded, fontError, initializing, onboardingSeen]);
 
   // 3. Handle Route Protection / Automatic Skipping
   useEffect(() => {
-    // Don't run routing logic until fonts and auth state are ready
-    if (initializing || (!fontsLoaded && !fontError)) return;
+    // Don't run routing logic until fonts, auth state and the first-run flag are ready
+    if (initializing || (!fontsLoaded && !fontError) || onboardingSeen === null) return;
 
     // segments[0] checks top-level directory (e.g. '(auth)' or '(tabs)')
     const inAuthGroup = segments[0] === '(auth)';
@@ -77,13 +91,19 @@ export default function RootLayout() {
       // User is logged in -> Skip auth screens and send to Dashboard
       router.replace('/(tabs)/dashboard');
     } else if (!user && !inAuthGroup) {
-      // User is NOT logged in -> Send to Login
-      router.replace('/(auth)/login');
+      // User is NOT logged in -> a device that has never seen the tour gets it
+      // first; everyone else lands on the splash screen, which offers Log In,
+      // Sign Up, and a way back into the tour.
+      //
+      // Note this branch only fires OUTSIDE (auth). Anything inside that group
+      // — splash, onboarding, login, signup — is left alone, which is what
+      // makes splash reachable at all: it used to be replaced away instantly.
+      router.replace(onboardingSeen ? '/(auth)/splash' : '/(auth)/onboarding');
     }
-  }, [user, initializing, segments, fontsLoaded, fontError]);
+  }, [user, initializing, segments, fontsLoaded, fontError, onboardingSeen]);
 
-  // While fonts/auth are loading, return null (Splash Screen covers the display)
-  if ((!fontsLoaded && !fontError) || initializing) {
+  // While fonts/auth/first-run flag are loading, return null (Splash Screen covers the display)
+  if ((!fontsLoaded && !fontError) || initializing || onboardingSeen === null) {
     return null;
   }
 
