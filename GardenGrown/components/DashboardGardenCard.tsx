@@ -25,6 +25,8 @@ type GardenCardProps = {
   terrain?: TerrainMap;
   imageSource?: ImageSourcePropType;
   onPressEnter?: () => void;
+  /** Footer call-to-action. Overridden for the no-gardens empty state. */
+  enterLabel?: string;
   totalCards?: number;
   currentIndex?: number;
 };
@@ -60,6 +62,7 @@ export default function GardenCard({
   terrain,
   imageSource,
   onPressEnter,
+  enterLabel = "Enter Garden",
   totalCards = 3,
   currentIndex = 0,
 }: GardenCardProps) {
@@ -297,7 +300,7 @@ export default function GardenCard({
                 className="font-zenloop text-[#A3C4A3] text-4xl leading-none mb-1.5"
                 style={{ textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
               >
-                -- Enter Garden --
+                -- {enterLabel} --
               </Text>
             </Pressable>
 

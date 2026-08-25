@@ -44,8 +44,8 @@ const MINUTES = 1 / 60;
  * watering for each leg.
  */
 export const SEED_TO_SAPLING_MINUTES = 1;
-export const SAPLING_TO_MATURE_MINUTES = 5;
-export const SEED_TO_MATURE_MINUTES = 5;
+export const SAPLING_TO_MATURE_MINUTES = 1;
+export const SEED_TO_MATURE_MINUTES = 1;
 
 /** The last stage has nothing to grow into, so its duration is never read. */
 const FINAL_STAGE = 0;
@@ -79,4 +79,4 @@ export const woodyGrowth = (matureImage: any): GrowthStage[] => [
  * React (and writes to Firestore) when a stage actually changes, so this can be
  * frequent without being costly.
  */
-export const GROWTH_TICK_MS = 20_000;
+export const GROWTH_TICK_MS = 5_000;

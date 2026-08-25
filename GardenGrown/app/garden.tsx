@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GardenInventory } from '../components/GardenInventory';
+import CreateGardenModal from '../components/CreateGardenModal';
 import {
   CELL_SIZE,
   COLUMNS,
@@ -272,6 +273,14 @@ export default function GardenScreen() {
   const [userGardens, setUserGardens] = useState<{ id: string; name: string }[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
+  // Garden creation
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  /** True once the garden list has been fetched at least once. Distinct from
+   *  `loading`, which tracks a single garden's contents — the lock can only be
+   *  judged after the list itself has come back. */
+  const [gardensLoaded, setGardensLoaded] = useState(false);
+
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
   // What's currently being dragged over the garden: either a catalog entry
   // being placed, or the watering can. The can isn't placeable, so it gets its
@@ -372,12 +381,19 @@ export default function GardenScreen() {
       }
     } catch (error) {
       console.error("Error fetching user gardens:", error);
+    } finally {
+      // Set even on failure: the lock needs to resolve one way or the other,
+      // or a network error would leave the screen stuck on the spinner.
+      setGardensLoaded(true);
     }
   };
 
+  // Once on mount only. The list doesn't change when the user merely switches
+  // gardens, and refetching on every switch was a wasted query; create and
+  // delete refresh it explicitly instead.
   useEffect(() => {
     fetchUserGardens();
-  }, [currentGardenDocId]);
+  }, []);
 
   // --- 2. FETCH CURRENT SELECTED GARDEN DATA ---
   useEffect(() => {
@@ -456,44 +472,53 @@ export default function GardenScreen() {
   };
 
   // --- 4. CREATE NEW GARDEN ---
-  const handleCreateNewGarden = () => {
-    Alert.prompt(
-      "New Garden",
-      "Give your new garden a name:",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Create", 
-          onPress: async (name?: string) => {
-            if (!name || !auth.currentUser) return;
-            try {
-              setLoading(true);
-              const newGardenId = await createGarden(auth.currentUser.uid, name);
+  const handleCreateNewGarden = () => setIsCreateOpen(true);
 
-              setCurrentGardenDocId(newGardenId);
-              setCurrentGardenName(name);
-              setPlacedItems([]);
-              placedItemsRef.current = [];
-              // Clear terrain too, or the previous garden's tiles would be
-              // rendered over — and then saved into — the new empty garden.
-              setTerrain({});
-              terrainRef.current = {};
-            } catch (error) {
-              console.error("Error creating garden:", error);
-              Alert.alert("Error", "Could not create garden.");
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
+  const handleCreateSubmit = async (name: string) => {
+    if (!auth.currentUser) return;
+
+    try {
+      setIsCreating(true);
+      const newGardenId = await createGarden(auth.currentUser.uid, name);
+
+      setCurrentGardenDocId(newGardenId);
+      setCurrentGardenName(name);
+      setPlacedItems([]);
+      placedItemsRef.current = [];
+      // Clear terrain too, or the previous garden's tiles would be
+      // rendered over — and then saved into — the new empty garden.
+      setTerrain({});
+      terrainRef.current = {};
+
+      // The list no longer refreshes on selection change, so add the new
+      // garden to it here rather than refetching the whole collection.
+      setUserGardens(prev => [...prev, { id: newGardenId, name }]);
+      setIsCreateOpen(false);
+    } catch (error) {
+      console.error("Error creating garden:", error);
+      Alert.alert("Error", "Could not create garden.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleSelectGarden = (id: string) => {
     setCurrentGardenDocId(id);
     setIsDropdownOpen(false);
   };
+
+  /**
+   * The user has no garden to plant in. Gated on gardensLoaded so the modal
+   * doesn't flash before the list comes back on a cold open.
+   */
+  const hasNoGardens = gardensLoaded && !currentGardenDocId && userGardens.length === 0;
+
+  /**
+   * Whether the garden can be edited at all. Every mutation checks this — the
+   * modal is the UX, but a view concern shouldn't be the only thing standing
+   * between a drag and a write against a garden that doesn't exist.
+   */
+  const canEdit = !!currentGardenDocId;
 
   const handleDeleteGarden = (id: string, name: string) => {
     Alert.alert(
@@ -593,6 +618,8 @@ export default function GardenScreen() {
     updateGhost(null);
     setIsScrollEnabled(true);
 
+    if (!canEdit) return;
+
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
       if (!width || !height) return;
 
@@ -643,6 +670,8 @@ export default function GardenScreen() {
 
   /** Paints (or, for the eraser, clears) a single terrain cell. */
   const handlePaintTerrain = (catalogId: string, col: number, row: number) => {
+    if (!canEdit) return;
+
     setTerrain(prev => {
       const key = cellKey(col, row);
       const terrainId = terrainIdFromCatalogId(catalogId);
@@ -769,7 +798,7 @@ export default function GardenScreen() {
     // inside it would stay stuck to the screen.
     updateGhost(null);
 
-    if (!entry) return;
+    if (!entry || !canEdit) return;
 
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
       if (!width || !height) return;
@@ -826,7 +855,10 @@ export default function GardenScreen() {
     });
   };
 
-  if (loading) {
+  // Wait for the garden list too, not just the current garden's contents —
+  // otherwise a user with no gardens briefly sees an empty, unusable grid
+  // before the lock resolves.
+  if (loading || !gardensLoaded) {
     return (
       <View className="flex-1 bg-[#F4EFE6] items-center justify-center">
         <ActivityIndicator size="large" color="#4A4A4A" />
@@ -837,7 +869,18 @@ export default function GardenScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-[#F4EFE6]">
-        
+
+        {/* CREATE GARDEN MODAL — mandatory when the user has none, since the
+            grid behind it can't save anything without a garden document. */}
+        <CreateGardenModal
+          visible={isCreateOpen || hasNoGardens}
+          mandatory={hasNoGardens}
+          busy={isCreating}
+          onCancel={() => setIsCreateOpen(false)}
+          onCreate={handleCreateSubmit}
+          onBackToDashboard={() => router.replace('/(tabs)/dashboard')}
+        />
+
         {/* GARDEN DROPDOWN MODAL */}
         <Modal
           visible={isDropdownOpen}

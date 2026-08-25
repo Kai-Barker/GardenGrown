@@ -222,12 +222,21 @@ export default function Dashboard() {
                 </ScrollView>
               ) : (
                 <View style={{ height: CARD_HEIGHT }} className="px-6 w-full">
-                  <GardenCard
-                    title="Current Garden"
-                    gardenName="No Gardens Found"
-                    currentIndex={0}
-                    totalCards={1}
-                  />
+                  {/* Tappable so a new user has a route in — the garden screen
+                      greets them with the mandatory create-garden modal. */}
+                  <Pressable
+                    style={{ width: '100%', height: '100%' }}
+                    onPress={() => router.push('/garden')}
+                  >
+                    <GardenCard
+                      title="Current Garden"
+                      gardenName="No Gardens Found"
+                      currentIndex={0}
+                      totalCards={1}
+                      enterLabel="Create a Garden"
+                      onPressEnter={() => router.push('/garden')}
+                    />
+                  </Pressable>
                 </View>
               )}
             </View>
