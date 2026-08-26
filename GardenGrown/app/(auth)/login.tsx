@@ -80,8 +80,12 @@ export default function Login() {
                         {/* Actions */}
                         <View className="mt-4 w-[60%] self-center">
                             <AuthButton title="Log In" onPress={handleLogin} />
-                            {/* Leaving this here for when you setup Google Auth later! */}
-                            <AuthButton title="Google Sign in" variant="secondary" onPress={() => console.log('Google sign in coming soon')} />
+                            {/* Google sign-in needs a development build — the Google auth
+                                libraries require custom native code and don't run in Expo Go.
+                                Restore once off Expo Go; the handler below doesn't exist yet,
+                                so uncommenting will fail loudly until it's written.
+                                See docs.expo.dev/guides/google-authentication
+                            <AuthButton title="Google Sign in" variant="secondary" onPress={handleGoogleSignIn} /> */}
                         </View>
 
                         {/* Footer / Switch Auth */}

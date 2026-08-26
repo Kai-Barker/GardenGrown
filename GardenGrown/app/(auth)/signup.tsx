@@ -86,7 +86,13 @@ export default function SignUp() {
             {/* Actions */}
             <View className="mt-4">
               <AuthButton title="Sign Up" onPress={handleSignUp} />
-              <AuthButton title="Google Sign in" variant="secondary" onPress={handleSignUp} />
+              {/* Google sign-in needs a development build — the Google auth libraries
+                  require custom native code and don't run in Expo Go. This was also
+                  wired to handleSignUp, which ran the email/password signup instead;
+                  the handler below deliberately doesn't exist, so uncommenting fails
+                  loudly rather than restoring that bug.
+                  See docs.expo.dev/guides/google-authentication
+              <AuthButton title="Google Sign in" variant="secondary" onPress={handleGoogleSignIn} /> */}
             </View>
 
             {/* Footer / Switch Auth */}
