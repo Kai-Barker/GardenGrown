@@ -8,10 +8,10 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  runOnJS,
   interpolate,
   type SharedValue
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GardenInventory } from '../components/GardenInventory';
 import CreateGardenModal from '../components/CreateGardenModal';
@@ -150,28 +150,28 @@ function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMo
 
   const panGesture = Gesture.Pan()
     .onStart(() => {
-      isDragging.value = true;
-      runOnJS(setScrollEnabled)(false);
-      // Only the id crosses the worklet boundary — runOnJS serialises its
+      isDragging.set(true);
+      scheduleOnRN(setScrollEnabled, false);
+      // Only the id crosses the worklet boundary — scheduleOnRN serialises its
       // arguments, and a PlacedObject instance can't survive that.
-      runOnJS(onMoveStart)(instanceId);
-      startX.value = translateX.value;
-      startY.value = translateY.value;
+      scheduleOnRN(onMoveStart, instanceId);
+      startX.set(translateX.value);
+      startY.set(translateY.value);
     })
     .onUpdate((event) => {
       const currentScale = (zoomScale && zoomScale.value > 0) ? zoomScale.value : 1;
-      translateX.value = startX.value + (event.translationX / currentScale);
-      translateY.value = startY.value + (event.translationY / currentScale);
-      runOnJS(onDragMove)(event.absoluteX, event.absoluteY);
+      translateX.set(startX.value + (event.translationX / currentScale));
+      translateY.set(startY.value + (event.translationY / currentScale));
+      scheduleOnRN(onDragMove, event.absoluteX, event.absoluteY);
     })
     .onEnd((event) => {
-      isDragging.value = false;
-      runOnJS(setScrollEnabled)(true);
-      runOnJS(onMoveEnd)(); 
+      isDragging.set(false);
+      scheduleOnRN(setScrollEnabled, true);
+      scheduleOnRN(onMoveEnd); 
 
       if (event.absoluteY > DELETE_THRESHOLD) {
-        runOnJS(Vibration.vibrate)([0, 50, 100, 50]);
-        runOnJS(onDelete)(instanceId);
+        scheduleOnRN(Vibration.vibrate, [0, 50, 100, 50]);
+        scheduleOnRN(onDelete, instanceId);
         return;
       }
 
@@ -195,13 +195,13 @@ function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMo
       }
 
       if (isBlocked) {
-        runOnJS(Vibration.vibrate)([0, 50, 50, 50]);
-        translateX.value = withSpring(col * CELL_SIZE);
-        translateY.value = withSpring(row * CELL_SIZE);
+        scheduleOnRN(Vibration.vibrate, [0, 50, 50, 50]);
+        translateX.set(withSpring(col * CELL_SIZE));
+        translateY.set(withSpring(row * CELL_SIZE));
       } else {
-        translateX.value = withSpring(newCol * CELL_SIZE);
-        translateY.value = withSpring(newRow * CELL_SIZE);
-        runOnJS(onSnap)(instanceId, newCol, newRow);
+        translateX.set(withSpring(newCol * CELL_SIZE));
+        translateY.set(withSpring(newRow * CELL_SIZE));
+        scheduleOnRN(onSnap, instanceId, newCol, newRow);
       }
     });
 
@@ -299,7 +299,7 @@ export default function GardenScreen() {
   useEffect(() => { terrainRef.current = terrain; }, [terrain]);
 
   // What's being dragged, readable from the gesture callbacks without risking a
-  // stale closure — those fire via runOnJS and hold the props from the render
+  // stale closure — those fire via scheduleOnRN and hold the props from the render
   // that built the gesture, which is before any drag began.
   const activeGhostRef = useRef<Ghost | null>(null);
 
@@ -392,6 +392,8 @@ export default function GardenScreen() {
   // gardens, and refetching on every switch was a wasted query; create and
   // delete refresh it explicitly instead.
   useEffect(() => {
+    // Async fetch — state is only set after the await, so this doesn't cascade renders
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchUserGardens();
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -45,9 +45,12 @@ export default function CreateGardenModal({
   const [name, setName] = useState('');
 
   // Reset between openings, so a cancelled attempt doesn't prefill the next.
-  useEffect(() => {
+  // Done during render rather than in an effect so the old name never flashes.
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (visible) setName('');
-  }, [visible]);
+  }
 
   const trimmed = name.trim();
   const canCreate = trimmed.length > 0 && !busy;

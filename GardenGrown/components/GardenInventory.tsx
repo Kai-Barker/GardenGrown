@@ -3,7 +3,8 @@ import { View, Text, Pressable, FlatList, Animated, PanResponder, Vibration } fr
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { SharedValue, runOnJS } from 'react-native-reanimated';
+import { SharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { getEntriesByKind } from './Garden/catalog';
 import { DRAWER_HEIGHT, PEEK_HEIGHT } from './Garden/constants';
 import WateringCan, { CAN_RESERVE } from './Garden/WateringCan';
@@ -61,7 +62,7 @@ export function GardenInventory({
     isExpandedRef.current = isExpanded;
   }, [isExpanded]);
 
-  const panY = useRef(new Animated.Value(CLOSED_TRANSLATE_Y)).current;
+  const [panY] = useState(() => new Animated.Value(CLOSED_TRANSLATE_Y));
 
   const filteredItems = useMemo(() => getEntriesByKind(activeCategory), [activeCategory]);
 
@@ -90,7 +91,9 @@ export function GardenInventory({
     onOpenDropdown();
   };
 
-  const panResponder = useRef(
+  // isExpandedRef is only read inside the gesture callbacks, not during render
+  // eslint-disable-next-line react-hooks/refs
+  const [panResponder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
@@ -124,7 +127,7 @@ export function GardenInventory({
         }
       },
     })
-  ).current;
+  );
 
   return (
     <Animated.View
@@ -277,17 +280,17 @@ function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragMove, onDra
   const pan = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart((e) => {
-      runOnJS(onDragStart)(item, e.absoluteX, e.absoluteY);
-      dragX.value = e.absoluteX;
-      dragY.value = e.absoluteY;
+      scheduleOnRN(onDragStart, item, e.absoluteX, e.absoluteY);
+      dragX.set(e.absoluteX);
+      dragY.set(e.absoluteY);
     })
     .onUpdate((e) => {
-      dragX.value = e.absoluteX;
-      dragY.value = e.absoluteY;
-      runOnJS(onDragMove)(e.absoluteX, e.absoluteY);
+      dragX.set(e.absoluteX);
+      dragY.set(e.absoluteY);
+      scheduleOnRN(onDragMove, e.absoluteX, e.absoluteY);
     })
     .onEnd((e) => {
-      runOnJS(onDragEnd)(e.absoluteX, e.absoluteY);
+      scheduleOnRN(onDragEnd, e.absoluteX, e.absoluteY);
     });
 
   // Terrain tiles are cell-filling textures, so they preview edge-to-edge

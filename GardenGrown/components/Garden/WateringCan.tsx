@@ -2,7 +2,8 @@ import React from 'react';
 import { View } from 'react-native';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { type SharedValue, runOnJS } from 'react-native-reanimated';
+import { type SharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 export const WATERING_CAN_IMAGE = require('../../assets/images/watering can.webp');
 
 export const BUTTON_SIZE = 64;
@@ -40,17 +41,17 @@ type WateringCanProps = {
 export default function WateringCan({ dragX, dragY, onDragStart, onDragMove, onDragEnd }: WateringCanProps) {
   const pan = Gesture.Pan()
     .onStart((e) => {
-      runOnJS(onDragStart)();
-      dragX.value = e.absoluteX;
-      dragY.value = e.absoluteY;
+      scheduleOnRN(onDragStart);
+      dragX.set(e.absoluteX);
+      dragY.set(e.absoluteY);
     })
     .onUpdate((e) => {
-      dragX.value = e.absoluteX;
-      dragY.value = e.absoluteY;
-      runOnJS(onDragMove)(e.absoluteX, e.absoluteY);
+      dragX.set(e.absoluteX);
+      dragY.set(e.absoluteY);
+      scheduleOnRN(onDragMove, e.absoluteX, e.absoluteY);
     })
     .onEnd((e) => {
-      runOnJS(onDragEnd)(e.absoluteX, e.absoluteY);
+      scheduleOnRN(onDragEnd, e.absoluteX, e.absoluteY);
     });
 
   return (

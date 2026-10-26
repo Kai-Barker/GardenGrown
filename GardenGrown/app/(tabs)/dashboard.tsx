@@ -146,7 +146,7 @@ export default function Dashboard() {
                 Welcome Back,
               </Text>
               <Text className="font-zenloop text-4xl text-gray-700 leading-none">
-                Let's see how your gardens have grown
+                Let&apos;s see how your gardens have grown
               </Text>
             </View>
 
