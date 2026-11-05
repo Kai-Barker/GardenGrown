@@ -1,8 +1,8 @@
 # Kai Barker - Garden Grown
 
-<!-- Add a banner image here, e.g.:
-<img width="1280" height="480" alt="GardenGrownBanner" src="" />
--->
+<p align="center">
+  <img width="1280" alt="GardenGrown banner" src="./ReadMeAssets/GardenGrownBanner.webp" />
+</p>
 
 ## Table of Contents
 
