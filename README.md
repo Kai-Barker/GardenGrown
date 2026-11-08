@@ -45,7 +45,7 @@ Users can create an account, build and customise a garden on a grid by dragging 
 ![NativeWind](https://img.shields.io/badge/-NativeWind-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
 ![Reanimated](https://img.shields.io/badge/-React%20Native%20Reanimated-black?style=for-the-badge&logo=react&logoColor=61DAFB)
 
-Built on Expo SDK 54 with Expo Router for file-based navigation, React Native Gesture Handler for the drag-and-drop pipeline, and the Zen Loop and Zen Maru Gothic typefaces.
+Built on Expo SDK 58 with Expo Router for file-based navigation, React Native Gesture Handler for the drag-and-drop pipeline, and the Zen Loop and Zen Maru Gothic typefaces.
 
 #### Backend / Services
 ![Firebase](https://img.shields.io/badge/-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)

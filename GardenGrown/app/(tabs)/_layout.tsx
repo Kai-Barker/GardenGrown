@@ -1,13 +1,27 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { View, Pressable, Platform } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import type React from 'react';
 
-function CustomTabBar({ state, navigation }: any) {
+// Props expo-router passes to a custom tab bar. As of expo-router 58 there is no
+// `navigation` prop — tabs are switched with `navigateToTab(route.key)`.
+type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>>[0];
+
+function CustomTabBar({ state, emitter, navigateToTab }: TabBarProps) {
   const router = useRouter();
   
   // Find which real tab is active (0 = dashboard, 1 = profile)
   const activeRouteName = state.routes[state.index].name;
+
+  // Switch to a tab by route name, mirroring the built-in tab bar: emit `tabPress`
+  // (so screens can listen/prevent it), then navigate using the route's key.
+  const goToTab = (name: string) => {
+    const index = state.routes.findIndex((r) => r.name === name);
+    if (index === -1) return;
+    const route = state.routes[index];
+    const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+    if (index !== state.index && !event.defaultPrevented) navigateToTab(route.key);
+  };
 
   return (
     <View
@@ -20,7 +34,7 @@ function CustomTabBar({ state, navigation }: any) {
       {/* 1. DASHBOARD TAB */}
       <View className="flex-row items-center flex-1">
         <Pressable
-          onPress={() => navigation.navigate('dashboard')}
+          onPress={() => goToTab('dashboard')}
           className="flex-1 items-center justify-center h-full"
         >
           <Feather 
@@ -46,7 +60,7 @@ function CustomTabBar({ state, navigation }: any) {
       {/* 3. PROFILE TAB */}
       <View className="flex-row items-center flex-1">
         <Pressable
-          onPress={() => navigation.navigate('profile')}
+          onPress={() => goToTab('profile')}
           className="flex-1 items-center justify-center h-full"
         >
           <Feather 

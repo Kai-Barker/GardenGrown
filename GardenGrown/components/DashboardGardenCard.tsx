@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, ImageSourcePropType, Pressable } from 'react-native';
-import { Image } from 'expo-image';
+import { View, Text, Pressable } from 'react-native';
+import { Image, type ImageProps } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getEntry } from './Garden/catalog';
 import { PlacedObject, PlantObject } from './Garden/objects';
@@ -23,7 +23,7 @@ type GardenCardProps = {
   gardenName?: string;
   placedItems?: PlacedItem[];
   terrain?: TerrainMap;
-  imageSource?: ImageSourcePropType;
+  imageSource?: ImageProps['source'];
   onPressEnter?: () => void;
   /** Footer call-to-action. Overridden for the no-gardens empty state. */
   enterLabel?: string;

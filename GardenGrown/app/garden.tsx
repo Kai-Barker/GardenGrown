@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, Pressable, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal, type ViewInstance } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -316,7 +316,7 @@ export default function GardenScreen() {
     setActiveGhost(ghost);
   };
 
-  const gridRef = useRef<View>(null);
+  const gridRef = useRef<ViewInstance>(null);
   const zoomScaleRef = useRef(1);
 
   // The grid's page position, cached when a drag starts. measure() is an async
