@@ -1,15 +1,17 @@
 import { View, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-// Re-using the same AuthComponents.tsx we already created
 import { AuthButton } from '../../components/AuthComponents';
 
+/**
+ * The signed-out landing screen: the logo on a sand texture, with buttons to
+ * log in, sign up, or replay the onboarding tour.
+ */
 export default function Splash() {
   const router = useRouter();
 
   return (
     <View className="flex-1 bg-[#EFEAE1]">
-      {/* Texture Overlay (edged to edge) */}
       <View pointerEvents="none" className="absolute w-full h-full z-0">
         <Image
           source={require('../../assets/textures/SandTextureVertical.webp')}
@@ -21,19 +23,16 @@ export default function Splash() {
       <SafeAreaView className="flex-1 justify-center items-center">
         <View className="w-[60vw] self-center flex-col items-center">
 
-          {/* The logo art is transparent and already self-contained, so it sits
-              straight on the sand background — no bordered card behind it. */}
           <Image
             source={require('../../assets/images/logo.png')}
             className="w-full h-48 mb-16"
             resizeMode="contain"
           />
 
-          {/* Action Buttons: Now centered and restricted by the w-3/4 container */}
           <View className="w-full mt-8">
-            <AuthButton 
-              title="Log In" 
-              onPress={() => router.push('/(auth)/login')} 
+            <AuthButton
+              title="Log In"
+              onPress={() => router.push('/(auth)/login')}
             />
             <AuthButton
               title="Sign Up"

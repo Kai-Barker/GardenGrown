@@ -55,6 +55,7 @@ export default function CreateGardenModal({
   const trimmed = name.trim();
   const canCreate = trimmed.length > 0 && !busy;
 
+  /** Hands the trimmed name to `onCreate`, unless it's empty or a create is already running. */
   const submit = () => {
     if (!canCreate) return;
     onCreate(trimmed);
@@ -81,7 +82,6 @@ export default function CreateGardenModal({
             className="relative w-full max-w-[420px]"
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Offset block shadow, matching the garden select modal. */}
             <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
 
             <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl p-5">

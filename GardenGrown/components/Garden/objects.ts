@@ -18,6 +18,7 @@ export abstract class PlacedObject {
 
   abstract readonly kind: ObjectKind;
 
+  /** Places an instance of a catalog entry at (col, row). */
   constructor(instanceId: string, entry: CatalogEntry, col: number, row: number) {
     this.instanceId = instanceId;
     this.entry = entry;
@@ -35,18 +36,22 @@ export abstract class PlacedObject {
     return 1;
   }
 
+  /** Whether the player can pick this up and move it. */
   get isDraggable(): boolean {
     return true;
   }
 
+  /** Footprint width in cells (1 unless the catalog says otherwise). */
   get gridWidth(): number {
     return this.entry.gridWidth ?? 1;
   }
 
+  /** Footprint height in cells (1 unless the catalog says otherwise). */
   get gridHeight(): number {
     return this.entry.gridHeight ?? 1;
   }
 
+  /** Whether the art renders taller than its footprint (visual only). */
   get isTall(): boolean {
     return this.entry.isTall ?? false;
   }
@@ -77,6 +82,7 @@ export abstract class PlacedObject {
     return this;
   }
 
+  /** The state saved to Firestore: identity and position. Render fields come back from the catalog. */
   toData(): PlacedObjectData {
     return {
       instanceId: this.instanceId,
@@ -137,6 +143,10 @@ export class PlantObject extends PlacedObject {
    */
   stageStartedAt?: number;
 
+  /**
+   * Restores a plant from saved state, defaulting anything missing: planted
+   * and watered "now", and — for plants saved before growth existed — mature.
+   */
   constructor(
     instanceId: string,
     entry: CatalogEntry,
@@ -157,6 +167,7 @@ export class PlantObject extends PlacedObject {
     this.stageStartedAt = state.stageStartedAt;
   }
 
+  /** Index of an entry's last growth stage (0 for a plant with no stages). */
   private static finalStage(entry: CatalogEntry): number {
     return Math.max(0, (entry.growthStages?.length ?? 0) - 1);
   }
@@ -181,6 +192,7 @@ export class PlantObject extends PlacedObject {
     return this.currentStage()?.visualCells;
   }
 
+  /** Whether the plant has reached its final stage. */
   get isMature(): boolean {
     return this.growthStage >= PlantObject.finalStage(this.entry);
   }
@@ -232,6 +244,7 @@ export class PlantObject extends PlacedObject {
     return this;
   }
 
+  /** The base saved state plus the plant's growth fields. */
   toData(): PlacedObjectData {
     const data: PlacedObjectData = {
       ...super.toData(),

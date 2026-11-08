@@ -41,6 +41,13 @@ type GardenInventoryProps = {
   onWaterDragEnd: (x: number, y: number) => void;
 };
 
+/**
+ * The garden's bottom dock. Closed, it shows a strip with a Back button, the
+ * garden name (which opens the garden switcher) and the category icons.
+ * Dragged or tapped open, it slides up to reveal category tabs and a grid of
+ * catalog items; long-pressing an item starts dragging it onto the garden.
+ * The watering can rides along on top of the dock.
+ */
 export function GardenInventory({
   dragX,
   dragY,
@@ -66,6 +73,7 @@ export function GardenInventory({
 
   const filteredItems = useMemo(() => getEntriesByKind(activeCategory), [activeCategory]);
 
+  /** Springs the drawer to a position (0 = open) and records whether it's now expanded. */
   const snapTo = (toValue: number, expandedState: boolean) => {
     Animated.spring(panY, {
       toValue,
@@ -76,6 +84,7 @@ export function GardenInventory({
     setIsExpanded(expandedState);
   };
 
+  /** Opens the drawer if it's closed, or closes it if it's open. */
   const toggleDrawer = () => {
     if (isExpanded) {
       snapTo(CLOSED_TRANSLATE_Y, false);
@@ -84,6 +93,7 @@ export function GardenInventory({
     }
   };
 
+  /** Closes the drawer (so it doesn't cover the switcher), then opens the garden switcher. */
   const handleOpenDropdown = () => {
     if (isExpanded) {
       snapTo(CLOSED_TRANSLATE_Y, false);
@@ -91,6 +101,11 @@ export function GardenInventory({
     onOpenDropdown();
   };
 
+  /**
+   * Lets the player drag the dock up and down. The drawer follows the finger
+   * (rubber-banding past fully open), then snaps open or closed on release
+   * depending on how far and how fast it was flicked.
+   */
   // isExpandedRef is only read inside the gesture callbacks, not during render
   // eslint-disable-next-line react-hooks/refs
   const [panResponder] = useState(() =>
@@ -234,7 +249,6 @@ export function GardenInventory({
           numColumns={4}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
-          // This applies a reliable, clean gap between rows and columns
           columnWrapperStyle={{ gap: 12, marginBottom: 12 }}
           ListEmptyComponent={
             <View className="w-full py-12 items-center justify-center">
@@ -276,6 +290,11 @@ type InventoryDraggableProps = {
   onDragEnd: (x: number, y: number) => void;
 };
 
+/**
+ * One tile in the inventory grid. A long press (250ms, so the list can still
+ * scroll) starts a drag, streaming the finger position to the garden's ghost
+ * overlay and drop handlers.
+ */
 function InventoryDraggable({ item, dragX, dragY, onDragStart, onDragMove, onDragEnd }: InventoryDraggableProps) {
   const pan = Gesture.Pan()
     .activateAfterLongPress(250)

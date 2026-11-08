@@ -112,8 +112,10 @@ export const CATALOG: CatalogEntry[] = [...ITEM_ENTRIES, ...TERRAIN_ENTRIES];
 
 const ENTRIES_BY_ID = new Map(CATALOG.map((entry) => [entry.id, entry]));
 
+/** Looks up a catalog entry by id; undefined for a missing or unknown id. */
 export const getEntry = (id: string | undefined): CatalogEntry | undefined =>
   id === undefined ? undefined : ENTRIES_BY_ID.get(id);
 
+/** Every catalog entry of one kind, in catalog order — used to fill the inventory tabs. */
 export const getEntriesByKind = (kind: ObjectKind): CatalogEntry[] =>
   CATALOG.filter((entry) => entry.kind === kind);

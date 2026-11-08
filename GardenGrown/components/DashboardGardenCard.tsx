@@ -31,9 +31,6 @@ type GardenCardProps = {
   currentIndex?: number;
 };
 
-// -------------------------------------------------------------
-// TINKER PARAMETERS
-// -------------------------------------------------------------
 // Grid dimensions and the oversize rule are imported from Garden/constants so
 // they can't drift from the real garden board. They have drifted twice before
 // (4x8 vs 8x12, then 12 vs 16 rows), each time throwing off the camera
@@ -53,8 +50,14 @@ const MANUAL_START_ROW = 3.5;
 // Darkness of the scrim placed over the preview art so title/footer text
 // stays legible. Raise for a darker background, lower for lighter.
 const DARKEN_OPACITY_CLASS = 'bg-black/40';
-// -------------------------------------------------------------
 
+/**
+ * The dashboard's garden preview card. Renders a zoomed-in window onto the
+ * saved garden — terrain, grid lines and placed items at their current growth
+ * stage — centred on the middle of the planted items, under the garden's name,
+ * an "Enter Garden" link and carousel page dots. Shows "Empty Garden" when
+ * there's nothing to draw, or `imageSource` instead if one is given.
+ */
 export default function GardenCard({
   title = "Current Garden",
   gardenName = "Raked Sand",
@@ -85,7 +88,6 @@ export default function GardenCard({
       const spanCols = item.gridWidth ?? invItem?.gridWidth ?? 1;
       const spanRows = item.gridHeight ?? invItem?.gridHeight ?? 1;
 
-      // Add the true center point of the item (origin + half width/height)
       sumCenterX += col + spanCols / 2;
       sumCenterY += row + spanRows / 2;
     });
@@ -97,7 +99,6 @@ export default function GardenCard({
     startCol = avgCenterX - VIEWPORT_COLS / 2;
     startRow = avgCenterY - VIEWPORT_ROWS / 2;
 
-    // Safe boundary clamping to prevent camera overflow
     const maxStartCol = Math.max(0, FULL_GRID_COLS - VIEWPORT_COLS);
     const maxStartRow = Math.max(0, FULL_GRID_ROWS - VIEWPORT_ROWS);
 
@@ -114,10 +115,9 @@ export default function GardenCard({
 
   return (
     <View className="relative w-full h-full">
-      {/* Drop Shadow */}
       <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
 
-      {/* Main Card Content — overflow-hidden clips the full-bleed preview to the rounded corners */}
+      {/* overflow-hidden clips the full-bleed preview to the rounded corners */}
       <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl h-full w-full overflow-hidden">
 
         {/* FULL-BLEED TRANSPARENT PREVIEW — absolutely positioned behind everything else,
@@ -159,7 +159,7 @@ export default function GardenCard({
                 );
               })}
 
-              {/* Scaled Grid Lines — tinted light since they now sit over the dark card bg */}
+              {/* Grid lines are tinted light because they sit over the dark card background. */}
               <View className="absolute inset-0 flex-col justify-between">
                 {Array.from({ length: Math.ceil(VIEWPORT_ROWS) }).map((_, rIdx) => (
                   <View
@@ -177,7 +177,6 @@ export default function GardenCard({
                 ))}
               </View>
 
-              {/* Placed Items Positioned Relative to Viewport Camera */}
               {sortedItems.map((item, idx) => {
                 // Coordinates are 0-based and shared with terrain — no offset.
                 const colIdx = item.col ?? 0;
@@ -198,8 +197,6 @@ export default function GardenCard({
                 const stageCells =
                   placed instanceof PlantObject ? placed.getVisualCells() : undefined;
 
-                // Prefer span/isTall stored on the placed item itself (garden.tsx saves
-                // these directly), falling back to the catalog entry.
                 const spanCols = item.gridWidth ?? invItem?.gridWidth ?? 1;
                 const spanRows = item.gridHeight ?? invItem?.gridHeight ?? 1;
                 const isTallItem = item.isTall ?? invItem?.isTall ?? false;
@@ -277,7 +274,6 @@ export default function GardenCard({
           className="relative flex-1 p-3 flex-col justify-between h-full w-full"
           pointerEvents="box-none"
         >
-          {/* Title Section */}
           <View>
             <Text
               className="font-zenmaru text-[#FADBB3] text-2xl leading-tight"
@@ -293,7 +289,6 @@ export default function GardenCard({
             </Text>
           </View>
 
-          {/* Footer Navigation */}
           <View className="items-center">
             <Pressable onPress={onPressEnter} className="active:opacity-75">
               <Text

@@ -32,6 +32,7 @@ export const TERRAIN_CATALOG_PREFIX = 't_';
 /** Catalog id of the eraser, which clears a cell's terrain instead of painting it. */
 export const TERRAIN_ERASER_ID = 't_none';
 
+/** The catalog id for a terrain tile, e.g. "grass" -> "t_grass". */
 export const terrainCatalogId = (id: TerrainId) => `${TERRAIN_CATALOG_PREFIX}${id}`;
 
 /**

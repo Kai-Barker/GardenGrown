@@ -17,11 +17,13 @@ export type TabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tab
 export default function CustomTabBar({ state, emitter, navigateToTab }: TabBarProps) {
   const router = useRouter();
 
-  // Find which real tab is active (0 = dashboard, 1 = profile)
   const activeRouteName = state.routes[state.index].name;
 
-  // Switch to a tab by route name, mirroring the built-in tab bar: emit `tabPress`
-  // (so screens can listen/prevent it), then navigate using the route's key.
+  /**
+   * Switches to a tab by route name, mirroring the built-in tab bar: emits
+   * `tabPress` (so screens can listen for or prevent it), then navigates using
+   * the route's key. Tapping the tab you're already on does nothing.
+   */
   const goToTab = (name: string) => {
     const index = state.routes.findIndex((r) => r.name === name);
     if (index === -1) return;
@@ -38,7 +40,6 @@ export default function CustomTabBar({ state, emitter, navigateToTab }: TabBarPr
         paddingBottom: Platform.OS === 'ios' ? 20 : 0
       }}
     >
-      {/* 1. DASHBOARD TAB */}
       <View className="flex-row items-center flex-1">
         <Pressable
           onPress={() => goToTab('dashboard')}
@@ -55,7 +56,6 @@ export default function CustomTabBar({ state, emitter, navigateToTab }: TabBarPr
         <View className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-12 bg-[#E1D4BA] rounded-full" />
       </View>
 
-      {/* 2. GARDEN STACK BUTTON */}
       <View className="flex-row items-center flex-1">
         <Pressable
           onPress={() => router.push('/garden')}
@@ -68,7 +68,6 @@ export default function CustomTabBar({ state, emitter, navigateToTab }: TabBarPr
         <View className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-12 bg-[#E1D4BA] rounded-full" />
       </View>
 
-      {/* 3. PROFILE TAB */}
       <View className="flex-row items-center flex-1">
         <Pressable
           onPress={() => goToTab('profile')}

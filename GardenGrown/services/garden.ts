@@ -75,6 +75,7 @@ export const saveGardenLayout = async (
   });
 };
 
+/** Permanently deletes a garden document. */
 export const deleteGarden = async (gardenId: string) => {
   await deleteDoc(doc(db, 'gardens', gardenId));
 };

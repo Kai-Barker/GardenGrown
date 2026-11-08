@@ -36,7 +36,7 @@ type WateringCanProps = {
  * position into the shared dragX/dragY so the screen's ghost overlay can follow
  * it — but skips the long-press activation those use. Inventory tiles need it
  * to stay scrollable inside a FlatList; the can is a lone button, so waiting
- *250ms before it moves would just feel unresponsive.
+ * 250ms before it moves would just feel unresponsive.
  */
 export default function WateringCan({ dragX, dragY, onDragStart, onDragMove, onDragEnd }: WateringCanProps) {
   const pan = Gesture.Pan()
@@ -61,7 +61,6 @@ export default function WateringCan({ dragX, dragY, onDragStart, onDragMove, onD
     >
       <GestureDetector gesture={pan}>
         <View style={{ width: BUTTON_SIZE, height: BUTTON_SIZE }}>
-          {/* Offset drop shadow, matching the buttons in the garden modal. */}
           <View
             className="absolute w-full h-full bg-[#4A4A4A] rounded-full"
             style={{ top: 2, left: 2 }}

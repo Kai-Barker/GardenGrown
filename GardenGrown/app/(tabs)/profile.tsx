@@ -14,6 +14,10 @@ import {
   signOutUser,
 } from '../../services/users';
 
+/**
+ * The account screen: profile photo, username (saved when the field loses
+ * focus), read-only email, a change-password form and a log-out button.
+ */
 export default function ProfileScreen() {
   const [username, setUsername] = useState('ZenGardener123');
   const [savedUsername, setSavedUsername] = useState('');
@@ -22,13 +26,13 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [notifications, setNotifications] = useState(true);
 
-  // State to hold the local/remote image URI
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    /** Fills the form from the signed-in user and their Firestore profile. */
     const fetchUserData = async () => {
       try {
         const user = auth.currentUser;
@@ -53,6 +57,10 @@ export default function ProfileScreen() {
     fetchUserData();
   }, []);
 
+  /**
+   * Changes the password after re-checking the current one, then clears both
+   * fields. Firebase's error (e.g. wrong current password) is shown on failure.
+   */
   const handleUpdatePassword = async () => {
     if (!currentPassword || !newPassword) {
       Alert.alert('Missing Fields', 'Please enter both your current and new password.');
@@ -73,6 +81,7 @@ export default function ProfileScreen() {
 
   }
 
+  /** Signs out; the root layout's route guard then sends the user to the auth screens. */
   const handleSignOut = async () => {
     try {
       await signOutUser();
@@ -81,6 +90,10 @@ export default function ProfileScreen() {
     }
   };
 
+  /**
+   * Lets the user pick and square-crop a photo, shows it straight away, then
+   * uploads it and swaps in the stored URL. Alerts if the upload fails.
+   */
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -107,6 +120,10 @@ export default function ProfileScreen() {
       }
     }
   };
+  /**
+   * Saves the username when the field loses focus. Blank input reverts to the
+   * saved name, an unchanged name does nothing, and a failed save reverts too.
+   */
   const handleUsernameBlur = async () => {
     const trimmedName = username.trim();
 
@@ -136,7 +153,6 @@ export default function ProfileScreen() {
 
   return (
     <View className="flex-1 bg-[#EFEAE1]">
-      {/* Texture Overlay (Styling Fix #1) */}
       <View pointerEvents="none" className="absolute w-full h-full z-0">
         <Image
           source={require('../../assets/textures/SandTextureVertical.webp')}
@@ -159,11 +175,8 @@ export default function ProfileScreen() {
             }}
           >
             <View className="flex-row items-center justify-center mb-10 gap-x-5">
-              {/* Image Container */}
               <View className="relative w-32 h-32">
-                {/* 1. Solid Shadow Layer */}
                 <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
-                {/* 2. Main Card Layer */}
                 <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl items-center justify-center overflow-hidden w-full h-full">
                   {profileImage ? (
                     <Image
@@ -177,15 +190,12 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* Edit Button */}
               <Pressable
                 onPress={pickImage}
                 disabled={uploadingImage}
                 className="relative w-16 h-16 active:opacity-80"
               >
-                {/* 1. Solid Shadow Layer */}
                 <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
-                {/* 2. Main Card Layer */}
                 <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl items-center justify-center w-full h-full">
                   <MaterialCommunityIcons
                     name={uploadingImage ? 'loading' : 'plus'}
@@ -197,7 +207,6 @@ export default function ProfileScreen() {
 
             </View>
 
-            {/* Basic Info Fields */}
             <FormInput
               label="Username"
               value={username}
@@ -205,7 +214,6 @@ export default function ProfileScreen() {
               onBlur={handleUsernameBlur}
               placeholder="ZenGardener123"
             />
-            {/* Email usually shouldn't be editable here unless you add a specific re-auth flow for changing emails, so we can make it read-only or just a standard input */}
             <FormInput
               label="Email"
               value={email}
@@ -217,7 +225,6 @@ export default function ProfileScreen() {
 
             <ThickDivider />
 
-            {/* Password Section (Using thick wireframe font style) */}
             <Text className="font-zenmaru-bold text-3xl text-[#4A4A4A] mb-5">
               Change Password?
             </Text>
@@ -237,7 +244,6 @@ export default function ProfileScreen() {
               placeholder="Enter new password"
             />
 
-            {/* Update Password Button */}
             <Pressable
               onPress={handleUpdatePassword}
               className="relative w-full mt-2 active:opacity-80"
@@ -250,7 +256,6 @@ export default function ProfileScreen() {
 
             <ThickDivider />
 
-            {/* Logout Button */}
             <Pressable
               onPress={handleSignOut}
               className="relative w-[60%] self-center active:opacity-80 mt-4"

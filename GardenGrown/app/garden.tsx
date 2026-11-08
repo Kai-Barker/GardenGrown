@@ -80,6 +80,13 @@ type DraggableObjectProps = {
   zoomScale: SharedValue<number>;
 };
 
+/**
+ * One placed object on the grid. Draws its art (oversized and bottom-anchored
+ * to its footprint, with a droplet hint when thirsty) and handles dragging it:
+ * following the finger while zoomed, deleting it if dropped in the delete
+ * zone, and otherwise snapping it to the nearest free cell — or springing back
+ * with a buzz if that spot is taken.
+ */
 function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMoveEnd, setScrollEnabled, occupiedCells, zoomScale }: DraggableObjectProps) {
   const translateX = useSharedValue(item.col * CELL_SIZE);
   const translateY = useSharedValue(item.row * CELL_SIZE);
@@ -203,6 +210,14 @@ function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMo
 
 /* MAIN GARDEN SCREEN
 =================================================== */
+/**
+ * The garden editor. Loads the selected garden (or the user's first one),
+ * shows the zoomable grid with its terrain and placed objects, and handles
+ * every edit: dragging items in from the inventory, moving and deleting them,
+ * painting terrain, watering plants, and growing them over time. Every change
+ * is saved straight to Firestore. Also hosts the garden switcher and the
+ * create-garden modal (mandatory when the user has no gardens yet).
+ */
 export default function GardenScreen() {
   const router = useRouter();
   const { gardenId } = useLocalSearchParams<{ gardenId: string }>();
@@ -211,11 +226,9 @@ export default function GardenScreen() {
   const [currentGardenDocId, setCurrentGardenDocId] = useState<string | null>(gardenId || null);
   const [currentGardenName, setCurrentGardenName] = useState('Loading...');
   
-  // DROPDOWN STATE
   const [userGardens, setUserGardens] = useState<{ id: string; name: string }[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Garden creation
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   /** True once the garden list has been fetched at least once. Distinct from
@@ -265,6 +278,7 @@ export default function GardenScreen() {
   // native call, so the live drop highlight can't afford one per frame.
   const gridBoundsRef = useRef<{ pageX: number; pageY: number; width: number; height: number } | null>(null);
 
+  /** Measures the grid's on-screen position into gridBoundsRef for the drag highlight to use. */
   const cacheGridBounds = () => {
     gridRef.current?.measure((x, y, width, height, pageX, pageY) => {
       if (width && height) gridBoundsRef.current = { pageX, pageY, width, height };
@@ -274,7 +288,6 @@ export default function GardenScreen() {
   const activeDragY = useSharedValue(0);
   const zoomScale = useSharedValue(1);
 
-  // --- GHOST VISUAL SIZING & ANIMATED STYLE ---
   // Terrain tiles fill exactly one cell, the can previews at a fixed size, and
   // everything else previews at the oversized scale it'll render at once placed.
   const ghostEntry = activeGhost?.kind === 'catalog' ? activeGhost.entry : null;
@@ -304,7 +317,10 @@ export default function GardenScreen() {
     pointerEvents: 'none',
   }));
 
-  // --- 1. FETCH ALL USER GARDENS FOR DROPDOWN ---
+  /**
+   * Loads the user's gardens for the switcher, and opens the first one if no
+   * garden was passed in. Always marks the list as loaded, even on failure.
+   */
   const fetchUserGardens = async () => {
     if (!auth.currentUser) return;
     try {
@@ -317,7 +333,6 @@ export default function GardenScreen() {
 
       setUserGardens(fetchedList);
 
-      // Default to first garden if none selected
       if (!currentGardenDocId && fetchedList.length > 0) {
         setCurrentGardenDocId(fetchedList[0].id);
       }
@@ -339,8 +354,11 @@ export default function GardenScreen() {
     fetchUserGardens();
   }, []);
 
-  // --- 2. FETCH CURRENT SELECTED GARDEN DATA ---
   useEffect(() => {
+    /**
+     * Loads the selected garden's document and swaps its name, objects and
+     * terrain into state. Alerts if it can't be loaded.
+     */
     const fetchGarden = async () => {
       if (!currentGardenDocId) {
         setLoading(false);
@@ -377,11 +395,13 @@ export default function GardenScreen() {
     fetchGarden();
   }, [currentGardenDocId]);
 
-  // --- 3. SAVE GARDEN DATA ---
-  // Objects and terrain are saved together. Callers pass whichever half they
-  // just changed; the other half comes from the ref, which always holds the
-  // latest committed value (plain state would be stale inside a setState
-  // updater, where most of these calls happen).
+  /**
+   * Saves the garden's objects and terrain together. Callers pass whichever
+   * half they just changed; the other half comes from the ref, which always
+   * holds the latest committed value (plain state would be stale inside a
+   * setState updater, where most of these calls happen). Errors are logged,
+   * not shown.
+   */
   const saveGardenData = async (objects?: PlacedObject[], terrainMap?: TerrainMap) => {
     if (!currentGardenDocId) return;
 
@@ -398,9 +418,13 @@ export default function GardenScreen() {
     }
   };
 
-  // --- 4. CREATE NEW GARDEN ---
+  /** Opens the create-garden modal. */
   const handleCreateNewGarden = () => setIsCreateOpen(true);
 
+  /**
+   * Creates a garden with the given name, switches to it with an empty grid,
+   * and adds it to the switcher list. Alerts if creation fails.
+   */
   const handleCreateSubmit = async (name: string) => {
     if (!auth.currentUser) return;
 
@@ -429,6 +453,7 @@ export default function GardenScreen() {
     }
   };
 
+  /** Switches to another garden from the switcher and closes it. */
   const handleSelectGarden = (id: string) => {
     setCurrentGardenDocId(id);
     setIsDropdownOpen(false);
@@ -447,6 +472,10 @@ export default function GardenScreen() {
    */
   const canEdit = !!currentGardenDocId;
 
+  /**
+   * Asks for confirmation, then deletes a garden. If it was the open one, opens
+   * the next garden — or, if none are left, returns to the dashboard.
+   */
   const handleDeleteGarden = (id: string, name: string) => {
     Alert.alert(
       `Delete "${name}"?`,
@@ -480,6 +509,7 @@ export default function GardenScreen() {
     );
   };
 
+  /** Records the ScrollView's current zoom so drags and drops can convert touches correctly. */
   const handleScroll = (e: any) => {
     const currentScale = e?.nativeEvent?.zoomScale;
     if (currentScale && currentScale > 0) {
@@ -490,6 +520,7 @@ export default function GardenScreen() {
 
   const occupiedCells = useMemo(() => buildOccupancy(placedItems), [placedItems]);
 
+  /** Moves an object to a new cell (after a successful drag) and saves. */
   const handleSnap = (id: string, newCol: number, newRow: number) => {
     setPlacedItems(prev => {
       const updated = prev.map(item =>
@@ -500,6 +531,7 @@ export default function GardenScreen() {
     });
   };
 
+  /** Removes an object (dragged into the delete zone) and saves. */
   const handleDelete = (id: string) => {
     setPlacedItems(prev => {
       const updated = prev.filter(item => item.instanceId !== id);
@@ -609,6 +641,7 @@ export default function GardenScreen() {
     });
   };
 
+  /** Starts dragging a catalog item: shows its ghost and locks scrolling until the drop. */
   const handleInventoryDragStart = (entry: CatalogEntry) => {
     updateGhost({ kind: 'catalog', entry });
     cacheGridBounds();
@@ -633,6 +666,7 @@ export default function GardenScreen() {
     cacheGridBounds();
   };
 
+  /** Clears the ghost and highlight once a placed object is released. */
   const handleMoveEnd = () => {
     movingIdRef.current = null;
     updateGhost(null);
@@ -676,6 +710,11 @@ export default function GardenScreen() {
     );
   };
 
+  /**
+   * Drops a catalog item where the finger was released: paints terrain, places
+   * a new object and saves it, or buzzes if the cells are taken. Does nothing
+   * off the grid or when there's no garden to edit.
+   */
   const handleInventoryDragEnd = (absoluteX: number, absoluteY: number) => {
     // Unconditional cleanup, before any early return and outside the measure()
     // callback — missing setIsScrollEnabled(true) on any path would leave the
@@ -737,8 +776,8 @@ export default function GardenScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1 bg-[#F4EFE6]">
 
-        {/* CREATE GARDEN MODAL — mandatory when the user has none, since the
-            grid behind it can't save anything without a garden document. */}
+        {/* Mandatory when the user has no gardens, since the grid behind it
+            can't save anything without a garden document. */}
         <CreateGardenModal
           visible={isCreateOpen || hasNoGardens}
           mandatory={hasNoGardens}
@@ -748,7 +787,6 @@ export default function GardenScreen() {
           onBackToDashboard={() => router.replace('/(tabs)/dashboard')}
         />
 
-        {/* GARDEN DROPDOWN MODAL */}
         <Modal
           visible={isDropdownOpen}
           transparent={true}
@@ -827,7 +865,6 @@ export default function GardenScreen() {
           </Pressable>
         </Modal>
 
-        {/* Global Ghost Item Overlay Layer */}
         {activeGhost && (
           <Animated.View style={[ghostAnimatedStyle, {
             width: ghostVisualWidth,

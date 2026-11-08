@@ -57,7 +57,6 @@ export const screenToCell = (
 ): CellHit => {
   const scale = zoom > 0 ? zoom : 1;
 
-  // The grid's actual on-screen footprint.
   const screenWidth = rect.width * scale;
   const screenHeight = rect.height * scale;
   const cell = cellSize * scale;
@@ -282,6 +281,7 @@ export const resolveCatalogDrop = (
 /* TERRAIN
 =================================================== */
 
+/** Whether (col, row) is a whole-number cell inside the grid. */
 const isOnGrid = (col: number, row: number) =>
   Number.isInteger(col) && Number.isInteger(row) &&
   col >= 0 && col < COLUMNS && row >= 0 && row < ROWS;
@@ -322,6 +322,7 @@ export const applyTerrainPaint = (
 /* LOADING
 =================================================== */
 
+/** Whether a value is a plain object (not null, not an array) — used to vet raw Firestore data. */
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

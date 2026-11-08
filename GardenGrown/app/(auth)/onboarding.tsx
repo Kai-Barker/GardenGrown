@@ -17,16 +17,9 @@ import { AuthButton } from '../../components/AuthComponents';
 import { setOnboardingComplete } from '../../services/onboarding';
 import { SEED_IMAGE, SAPLING_IMAGE } from '../../components/Garden/growth';
 
-/**
- * First-run tour. Shown automatically on a device that has never completed it
- * (the root layout decides that), and reachable any time afterwards from the
- * "How It Works" button on the splash screen.
- *
- * The art is assembled from the game's real assets rather than bespoke
- * illustrations, so the tour looks like the app it is describing — and so it
- * keeps looking right when that art is replaced.
- */
-
+// The tour's art is assembled from the game's real assets rather than bespoke
+// illustrations, so it looks like the app it describes — and keeps looking
+// right when that art is replaced.
 const GRASS = require('../../assets/Terrain/Grass.webp');
 const SAND = require('../../assets/Terrain/Sand.webp');
 const ROSE = require('../../assets/Plants/Rose.webp');
@@ -73,6 +66,7 @@ function MiniStatCard({
   );
 }
 
+/** Slide 1 art: a miniature dashboard — two stat cards, a garden card and page dots. */
 function DashboardArt() {
   return (
     <View className="w-full items-center">
@@ -81,7 +75,6 @@ function DashboardArt() {
         <MiniStatCard iconName="flower-tulip" heading="Total Decorations:" statValue="24" />
       </View>
 
-      {/* Stand-in for the garden carousel that sits between the two stat rows */}
       <View className="relative w-[88%] mt-5">
         <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
         <View className="relative h-20 bg-[#A1BEA4] border-2 border-[#4A4A4A] rounded-2xl items-center justify-center">
@@ -113,6 +106,7 @@ function GridTile({ terrain, content }: { terrain: any; content?: any }) {
   );
 }
 
+/** Slide 2 art: a 3x3 patch of grass and sand with a rose and a rock, plus a drag hint. */
 function GardenArt() {
   return (
     <View className="w-full items-center">
@@ -142,7 +136,6 @@ function GardenArt() {
           </View>
         </View>
 
-        {/* Drag gesture hint, floating over the empty centre cell */}
         <View className="absolute left-1/2 top-1/2 -ml-6 -mt-6 h-12 w-12 rounded-full bg-[#EFEAE1] border-2 border-[#4A4A4A] items-center justify-center">
           <MaterialCommunityIcons name="gesture-tap-hold" size={26} color="#4A4A4A" />
         </View>
@@ -151,10 +144,10 @@ function GardenArt() {
   );
 }
 
+/** Slide 3 art: the watering can above the seed -> sapling -> grown progression. */
 function GrowthArt() {
   return (
     <View className="w-full items-center">
-      {/* The can sits above the row it acts on, as it floats above the garden */}
       {/* Sized for the same reason as the grid above — an unsized wrapper lets
           the absolute shadow stretch to the whole slide. h-16 w-16 matches the
           circle it sits behind. */}
@@ -234,6 +227,12 @@ const SLIDES: Slide[] = [
  * Screen
  * ------------------------------------------------------------------ */
 
+/**
+ * The first-run tour: three swipeable slides (dashboard, designing a garden,
+ * watering and growth) with Next/Skip. Shown automatically on a device that
+ * has never completed it (the root layout decides that), and reachable any
+ * time afterwards from "How It Works" on the splash screen.
+ */
 export default function Onboarding() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -251,6 +250,7 @@ export default function Onboarding() {
     router.replace('/(auth)/splash');
   };
 
+  /** Advances to the next slide, or finishes the tour on the last one. */
   const handleNext = () => {
     if (isLast) {
       finish();
@@ -261,10 +261,12 @@ export default function Onboarding() {
     setIndex(next);
   };
 
+  /** Keeps the page dots in sync when the user swipes between slides. */
   const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     setIndex(Math.round(event.nativeEvent.contentOffset.x / width));
   };
 
+  /** Renders one full-width slide: its art, kicker, title and bullet points. */
   const renderSlide = ({ item }: { item: Slide }) => {
     const Art = item.art;
 
@@ -294,7 +296,6 @@ export default function Onboarding() {
 
   return (
     <View className="flex-1 bg-[#EFEAE1]">
-      {/* Texture Overlay (edge to edge) */}
       <View pointerEvents="none" className="absolute w-full h-full z-0">
         <RNImage
           source={require('../../assets/textures/SandTextureVertical.webp')}

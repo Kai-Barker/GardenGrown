@@ -8,22 +8,25 @@ import { auth } from '../../firebase';
 import { getUserProfile } from '../../services/users';
 import { getUserGardens } from '../../services/garden';
 
-// --- CAROUSEL LAYOUT METRICS ---
 const { width: screenWidth } = Dimensions.get('window');
 const CARD_WIDTH = screenWidth - 48;
 const CARD_HEIGHT = 210;
 const CARD_SPACING = 16;
 const SNAP_INTERVAL = CARD_WIDTH + CARD_SPACING;
 
+/**
+ * The signed-in home screen: a welcome header, stat cards (gardens, items
+ * placed, member since, items in the selected garden) and a swipeable
+ * carousel of garden previews that open the garden screen. Data is refetched
+ * every time the screen comes back into focus.
+ */
 export default function Dashboard() {
   const router = useRouter();
 
-  // --- STATE ---
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState('Gardener');
   const [activeGardenIndex, setActiveGardenIndex] = useState(0);
 
-  // Overall user stats
   const [userStats, setUserStats] = useState({
     totalGardens: 0,
     totalDecorations: 0,
@@ -32,13 +35,16 @@ export default function Dashboard() {
 
   const [gardens, setGardens] = useState<any[]>([]);
 
-  // --- FETCH DATA ---
+  /**
+   * Loads the user's profile (for the "Gardened Since" date) and all of their
+   * gardens, then derives the stat cards from them. Keeps the selected
+   * carousel card in range if a garden has been deleted since the last load.
+   */
   const fetchDashboardData = useCallback(async () => {
       const user = auth.currentUser;
       if (!user) return;
 
       try {
-        // 1. Fetch User Document
         const userData = await getUserProfile(user.uid);
 
         let fetchedGardenedSince = 'Just now';
@@ -52,7 +58,6 @@ export default function Dashboard() {
           }
         }
 
-        // 2. Fetch ALL Gardens Belonging to the User
         const userGardens = await getUserGardens(user.uid);
 
         let fetchedTotalDecorations = 0;
@@ -70,7 +75,6 @@ export default function Dashboard() {
           };
         });
 
-        // 3. Update State
         setGardens(fetchedGardens);
         setActiveGardenIndex(prev => Math.min(prev, Math.max(fetchedGardens.length - 1, 0)));
         setUserStats({
@@ -78,7 +82,6 @@ export default function Dashboard() {
           totalDecorations: fetchedTotalDecorations,
           gardenedSince: fetchedGardenedSince
         });
-        // console.log('PlacedItems sample:', JSON.stringify(gardens[0].PlacedItems));
 
 
       } catch (error: any) {
@@ -98,7 +101,7 @@ export default function Dashboard() {
     }, [fetchDashboardData])
   );
 
-  // --- HANDLE CAROUSEL SCROLL ---
+  /** Works out which garden card the carousel settled on after a swipe and selects it. */
   const handleCarouselScroll = (e: any) => {
     const offsetX = e.nativeEvent.contentOffset.x;
     const newIndex = Math.round(offsetX / SNAP_INTERVAL);
@@ -107,7 +110,6 @@ export default function Dashboard() {
     }
   };
 
-  // --- LOADING UI ---
   if (loading) {
     return (
       <View className="flex-1 bg-[#EFEAE1] items-center justify-center">
@@ -121,7 +123,6 @@ export default function Dashboard() {
 
   return (
     <View className="flex-1 bg-[#EFEAE1]">
-      {/* Texture Overlay */}
       <View pointerEvents="none" className="absolute w-full h-full z-0">
         <Image
           source={require('../../assets/textures/SandTextureVertical.webp')}
@@ -137,10 +138,8 @@ export default function Dashboard() {
             paddingBottom: 24
           }}
         >
-          {/* MAIN COLUMN WRAPPER */}
           <View className="flex-col gap-y-3">
 
-            {/* HEADER */}
             <View className="w-full px-6 mb-1">
               <Text className="font-zenmaru-bold text-5xl text-[#4A4A4A] mb-1 leading-tight">
                 Welcome Back,
@@ -150,7 +149,6 @@ export default function Dashboard() {
               </Text>
             </View>
 
-            {/* TOP STAT CARDS */}
             <View className="w-full px-6 flex-row justify-between">
               <View className="w-[48%] h-[20vh]">
                 <StatCard
@@ -168,7 +166,6 @@ export default function Dashboard() {
               </View>
             </View>
 
-            {/* GARDEN CAROUSEL */}
             <View style={{ height: CARD_HEIGHT + 10 /* Added +10 due to clipping of the shadow */ }} className="w-full">
               {gardens.length > 0 ? (
                 <ScrollView
@@ -241,7 +238,6 @@ export default function Dashboard() {
               )}
             </View>
 
-            {/* BOTTOM STAT CARDS */}
             <View className="w-full px-6 flex-row justify-between">
               <View className="w-[48%] h-[20vh]">
                 <StatCard

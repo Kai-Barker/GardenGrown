@@ -7,15 +7,17 @@ type StatCardProps = {
     statValue: string | number;
 };
 
+/**
+ * A dashboard tile showing an icon, a heading and one large statistic. It
+ * fills its grid slot exactly and sits on a solid offset shadow, matching the
+ * app's other cards.
+ */
 export default function StatCard({ iconName, heading, statValue }: StatCardProps) {
     return (
-        /* Stripped m-2 so it fills its 2-column grid slot flush */
         <View className="relative w-full h-full">
 
-            {/* 1. Solid Shadow */}
             <View className="absolute w-full h-full bg-[#4A4A4A] rounded-2xl top-1 left-1" />
 
-            {/* 2. Main Card */}
             <View className="relative bg-[#545E75] border-2 border-[#4A4A4A] rounded-2xl p-4 flex-col justify-between h-full w-full">
 
                 <View className="items-start">

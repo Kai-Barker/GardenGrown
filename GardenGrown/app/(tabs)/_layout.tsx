@@ -1,7 +1,10 @@
 import { Tabs } from 'expo-router';
 import CustomTabBar from '../../components/CustomTabBar';
 
-// Update the actual Tabs layout to only include Dashboard and Profile
+/**
+ * The signed-in tab navigator: Dashboard and Profile, rendered with the app's
+ * custom bottom bar (which also holds the button that opens the garden).
+ */
 export default function TabsLayout() {
   return (
     <Tabs

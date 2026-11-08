@@ -76,6 +76,7 @@ export const uploadProfileImage = async (uid: string, localUri: string): Promise
 /* AUTH
 =================================================== */
 
+/** Signs in with email and password and returns the user. Firebase errors are passed to the caller. */
 export const signIn = async (email: string, password: string) => {
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
   return userCredential.user;
@@ -102,6 +103,7 @@ export const changePassword = async (currentPassword: string, newPassword: strin
   await updatePassword(user, newPassword);
 };
 
+/** Signs the current user out of Firebase. */
 export const signOutUser = async () => {
   await signOut(auth);
 };

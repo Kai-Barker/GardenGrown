@@ -6,17 +6,19 @@ type CustomButtonProps = {
   variant?: 'primary' | 'secondary';
 };
 
+/**
+ * A full-width button for the auth screens, drawn on a solid offset shadow.
+ * `primary` is dark slate with sand text; `secondary` is a light earthy tone
+ * with dark text.
+ */
 export function AuthButton({ title, onPress, variant = 'primary' }: CustomButtonProps) {
-  // Primary uses your dark slate blue, Secondary uses a lighter earthy tone
   const bgColor = variant === 'primary' ? 'bg-[#545E75]' : 'bg-[#EFEAE1]';
   const textColor = variant === 'primary' ? 'text-[#FADBB3]' : 'text-[#4A4A4A]';
 
   return (
     <Pressable className="relative w-full mb-4 active:opacity-80" onPress={onPress}>
-      {/* Solid Shadow (Matches your Garden/Stat cards) */}
       <View className="absolute w-full h-14 bg-[#4A4A4A] rounded-2xl top-1 left-1" />
-      
-      {/* Main Button */}
+
       <View className={`relative ${bgColor} border-2 border-[#4A4A4A] rounded-2xl h-14 items-center justify-center`}>
         <Text className={`font-zenmaru-bold ${textColor} text-xl`}>
           {title}
@@ -30,6 +32,7 @@ type CustomInputProps = TextInputProps & {
   label: string;
 };
 
+/** A labelled text field for the login and signup forms; extra props go to the TextInput. */
 export function AuthInput({ label, ...props }: CustomInputProps) {
   return (
     <View className="w-full mb-4">
@@ -43,6 +46,7 @@ export function AuthInput({ label, ...props }: CustomInputProps) {
   );
 }
 
+/** A horizontal rule with a word in the middle, e.g. "or" between two auth options. */
 export function AuthDivider({ text }: { text: string }) {
   return (
     <View className="flex-row items-center my-6">

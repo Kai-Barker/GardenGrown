@@ -13,14 +13,19 @@ import { hasCompletedOnboarding } from '../services/onboarding';
 
 import "../global.css";
 
-// Prevent the splash screen from hiding automatically
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * The app's root. Keeps the native splash screen up until fonts, the auth
+ * state and the onboarding flag have all loaded, warms the garden art into the
+ * image cache, and acts as the route guard: signed-in users are kept out of the
+ * auth screens, and signed-out users are sent to the tour (first run) or the
+ * splash screen.
+ */
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
-  // Auth State
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<any>(null);
 
@@ -29,14 +34,12 @@ export default function RootLayout() {
   // because a logged-out user's destination depends on the answer.
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
 
-  // Load the fonts
   const [fontsLoaded, fontError] = useFonts({
     ZenLoop: ZenLoop_400Regular,
     ZenMaruRegular: ZenMaruGothic_400Regular,
     ZenMaruBold: ZenMaruGothic_700Bold,
   });
 
-  // 1. Listen for Auth State changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
@@ -46,8 +49,8 @@ export default function RootLayout() {
     return unsubscribe;
   }, []);
 
-  // 1b. Read the first-run flag. hasCompletedOnboarding never rejects — it
-  // resolves true if storage is unreadable — so there is no failure branch here.
+  // hasCompletedOnboarding never rejects — it resolves true if storage is
+  // unreadable — so there is no failure branch here.
   useEffect(() => {
     hasCompletedOnboarding().then(setOnboardingSeen);
   }, []);
@@ -70,39 +73,30 @@ export default function RootLayout() {
     });
   }, []);
 
-  // 2. Hide Splash Screen ONLY when fonts are loaded, Firebase is initialized,
-  // AND we know whether to open on the tour — otherwise the first frame after
-  // the splash can be the wrong screen, which then visibly swaps.
+  // Hide the splash only once we also know whether to open on the tour —
+  // otherwise the first frame can be the wrong screen, which then visibly swaps.
   useEffect(() => {
     if ((fontsLoaded || fontError) && !initializing && onboardingSeen !== null) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError, initializing, onboardingSeen]);
 
-  // 3. Handle Route Protection / Automatic Skipping
   useEffect(() => {
-    // Don't run routing logic until fonts, auth state and the first-run flag are ready
     if (initializing || (!fontsLoaded && !fontError) || onboardingSeen === null) return;
 
-    // segments[0] checks top-level directory (e.g. '(auth)' or '(tabs)')
     const inAuthGroup = segments[0] === '(auth)';
 
     if (user && inAuthGroup) {
-      // User is logged in -> Skip auth screens and send to Dashboard
       router.replace('/(tabs)/dashboard');
     } else if (!user && !inAuthGroup) {
-      // User is NOT logged in -> a device that has never seen the tour gets it
-      // first; everyone else lands on the splash screen, which offers Log In,
-      // Sign Up, and a way back into the tour.
-      //
-      // Note this branch only fires OUTSIDE (auth). Anything inside that group
-      // — splash, onboarding, login, signup — is left alone, which is what
-      // makes splash reachable at all: it used to be replaced away instantly.
+      // Only fires OUTSIDE (auth). Screens inside that group — splash,
+      // onboarding, login, signup — are left alone, which is what makes splash
+      // reachable at all: it used to be replaced away instantly.
       router.replace(onboardingSeen ? '/(auth)/splash' : '/(auth)/onboarding');
     }
   }, [user, initializing, segments, fontsLoaded, fontError, onboardingSeen]);
 
-  // While fonts/auth/first-run flag are loading, return null (Splash Screen covers the display)
+  // Render nothing while loading; the native splash screen covers the display.
   if ((!fontsLoaded && !fontError) || initializing || onboardingSeen === null) {
     return null;
   }

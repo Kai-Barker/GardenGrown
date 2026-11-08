@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 
+/** Headerless stack for the signed-out screens: splash, onboarding, login and signup. */
 export default function AuthLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
