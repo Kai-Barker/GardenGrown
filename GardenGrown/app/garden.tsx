@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, Dimensions, Vibration, ActivityIndicator, Alert, Modal, type ViewInstance } from 'react-native';
+import { View, Text, Pressable, ScrollView, Vibration, ActivityIndicator, Alert, Modal, type ViewInstance } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -21,19 +21,28 @@ import {
   DELETE_THRESHOLD,
   GRID_HEIGHT,
   GRID_WIDTH,
-  ROWS,
   TOTAL_CELLS,
-  cellKey,
   computeVisualBox,
 } from '../components/Garden/constants';
-import { PlacedObject, PlantObject, DecorationObject } from '../components/Garden/objects';
-import { getEntry } from '../components/Garden/catalog';
+import { PlacedObject, PlantObject } from '../components/Garden/objects';
 import { GROWTH_TICK_MS } from '../components/Garden/growth';
-import { terrainIdFromCatalogId } from '../components/Garden/terrain';
+import {
+  applyTerrainPaint,
+  buildOccupancy,
+  findBlocker,
+  findObjectAtCell,
+  isDropValid,
+  parseGardenDoc,
+  resolveCatalogDrop,
+  resolveDropCell,
+  screenToCell,
+  snapFromTranslation,
+  type Ghost,
+} from '../components/Garden/placement';
 import TerrainLayer from '../components/Garden/TerrainLayer';
 import DropHighlight from '../components/Garden/DropHighlight';
 import { WATERING_CAN_IMAGE } from '../components/Garden/WateringCan';
-import type { CatalogEntry, PlacedObjectData, TerrainMap } from '../components/Garden/types';
+import type { CatalogEntry, TerrainMap } from '../components/Garden/types';
 import { auth } from '../firebase';
 import {
   getUserGardens,
@@ -42,11 +51,6 @@ import {
   saveGardenLayout,
   deleteGarden,
 } from '../services/garden';
-
-/** What's being dragged over the garden right now. */
-type Ghost =
-  | { kind: 'catalog'; entry: CatalogEntry }
-  | { kind: 'can' };
 
 /** Size of the dragged watering can, in grid cells. */
 const CAN_GHOST_CELLS = 1.5;
@@ -57,61 +61,10 @@ const THIRSTY_COLOR = '#3B82F6';
 /** The cell a drag is currently over, and whether dropping there does anything. */
 type DropTarget = { col: number; row: number; valid: boolean };
 
-/**
- * Converts a screen touch into a grid cell, given the grid's measured rect and
- * the ScrollView's current zoom.
- *
- * measure() mixes two coordinate conventions inside a zoomed ScrollView, which
- * is what made this subtle:
- *
- *   - pageX/pageY ARE transformed — real screen coords, and strongly negative
- *     at high zoom because the grid's origin is scrolled off-screen.
- *   - width/height are NOT transformed — they stay at the layout size
- *     (measured 342 = GRID_WIDTH at 3x zoom).
- *
- * So the on-screen size has to be reconstructed as width * zoom. Comparing a
- * screen touch against the raw width instead makes the bounds check reject
- * every touch while zoomed, silently refusing all placement.
- */
-const screenToCell = (
-  absoluteX: number,
-  absoluteY: number,
-  rect: { pageX: number; pageY: number; width: number; height: number },
-  zoom: number,
-) => {
-  const scale = zoom > 0 ? zoom : 1;
-
-  // The grid's actual on-screen footprint.
-  const screenWidth = rect.width * scale;
-  const screenHeight = rect.height * scale;
-  const cell = CELL_SIZE * scale;
-
-  return {
-    col: Math.floor((absoluteX - rect.pageX) / cell),
-    row: Math.floor((absoluteY - rect.pageY) / cell),
-    inside:
-      absoluteX >= rect.pageX && absoluteX <= rect.pageX + screenWidth &&
-      absoluteY >= rect.pageY && absoluteY <= rect.pageY + screenHeight,
-  };
-};
-
-/**
- * "col,row" -> instanceId, for collision checks. Objects that don't block
- * (terrain) are skipped, so a plant can be placed on a painted cell.
- *
- * Module-level so gesture callbacks can rebuild it from a ref instead of
- * closing over the memoised copy, which would be stale by the time they run.
- */
-const buildOccupancy = (items: PlacedObject[]): Record<string, string> => {
-  const map: Record<string, string> = {};
-  items.forEach(item => {
-    if (!item.blocksPlacement) return;
-    item.occupiedCells().forEach(key => {
-      map[key] = item.instanceId;
-    });
-  });
-  return map;
-};
+// Grid maths (screenToCell, occupancy, clamping, collision, drop resolution)
+// lives in components/Garden/placement.ts, where it's unit tested. Gesture
+// callbacks rebuild occupancy from a ref via buildOccupancy rather than closing
+// over the memoised copy, which would be stale by the time they run.
 
 /* DRAGGABLE OBJECT COMPONENT
 =================================================== */
@@ -175,24 +128,13 @@ function DraggableObject({ item, onSnap, onDelete, onMoveStart, onDragMove, onMo
         return;
       }
 
-      const currentX = translateX.value;
-      const currentY = translateY.value;
-
-      let newCol = Math.round(currentX / CELL_SIZE);
-      let newRow = Math.round(currentY / CELL_SIZE);
-      newCol = Math.max(0, Math.min(newCol, COLUMNS - itemWidth));
-      newRow = Math.max(0, Math.min(newRow, ROWS - itemHeight));
-
-      let isBlocked = false;
-      for (let c = 0; c < itemWidth; c++) {
-        for (let r = 0; r < itemHeight; r++) {
-          const key = `${newCol + c},${newRow + r}`;
-          const blockingItem = occupiedCells[key];
-          if (blockingItem && blockingItem !== instanceId) {
-            isBlocked = true;
-          }
-        }
-      }
+      // Both helpers are worklets, so they're safe to call on the UI thread.
+      const { col: newCol, row: newRow } = snapFromTranslation(
+        translateX.value, translateY.value, CELL_SIZE, itemWidth, itemHeight,
+      );
+      // Ignore our own id: an object can be nudged onto cells it already covers.
+      const isBlocked =
+        findBlocker(occupiedCells, newCol, newRow, itemWidth, itemHeight, instanceId) !== null;
 
       if (isBlocked) {
         scheduleOnRN(Vibration.vibrate, [0, 50, 50, 50]);
@@ -410,31 +352,14 @@ export default function GardenScreen() {
         const data = await getGarden(currentGardenDocId);
 
         if (data) {
-          setCurrentGardenName(data.GardenTheme || 'My Garden');
+          // Drops unknown/corrupt items, catches plant growth up to now, and
+          // defaults a missing Terrain field — see parseGardenDoc.
+          const { name, items: loadedItems, terrain: loadedTerrain } = parseGardenDoc(data);
 
-          if (data.PlacedItems && Array.isArray(data.PlacedItems)) {
-            // Objects whose catalogId no longer exists resolve to null and are
-            // dropped, matching the long-standing behaviour here.
-            const reconstructedItems = (data.PlacedItems as PlacedObjectData[])
-              .map((savedItem) => PlacedObject.fromData(savedItem, getEntry(savedItem.catalogId)))
-              .filter((item): item is PlacedObject => item !== null);
+          setCurrentGardenName(name);
+          setPlacedItems(loadedItems);
+          placedItemsRef.current = loadedItems;
 
-            // Growth accrues while the app is closed, so catch every plant up to
-            // real elapsed time before the first render. Stage is derived from
-            // plantedAt, so this needs no write — it recomputes on every load.
-            reconstructedItems.forEach((item) => {
-              if (item instanceof PlantObject) item.advanceGrowth();
-            });
-
-            setPlacedItems(reconstructedItems);
-            placedItemsRef.current = reconstructedItems;
-          } else {
-            setPlacedItems([]);
-            placedItemsRef.current = [];
-          }
-
-          // Gardens created before terrain existed have no Terrain field.
-          const loadedTerrain: TerrainMap = data.Terrain ?? {};
           setTerrain(loadedTerrain);
           // Seed the mirrors immediately rather than waiting for the sync
           // effect, so a save fired right after a garden switch can't write
@@ -626,14 +551,13 @@ export default function GardenScreen() {
       if (!width || !height) return;
 
       const hit = screenToCell(absoluteX, absoluteY, { pageX, pageY, width, height }, zoomScaleRef.current);
+      // Same clamp the highlight uses, so the can waters what was highlighted.
+      const cell = resolveDropCell(hit, { kind: 'can' });
 
-      if (hit.inside) {
+      if (cell) {
         // Resolved from the ref rather than the occupiedCells memo: this runs
         // from a gesture callback holding an older render's closure.
-        const key = cellKey(hit.col, hit.row);
-        const target = placedItemsRef.current.find(
-          item => item.blocksPlacement && item.occupiedCells().includes(key)
-        );
+        const target = findObjectAtCell(placedItemsRef.current, cell.col, cell.row);
         if (target) handleWater(target.instanceId);
       }
     });
@@ -675,15 +599,10 @@ export default function GardenScreen() {
     if (!canEdit) return;
 
     setTerrain(prev => {
-      const key = cellKey(col, row);
-      const terrainId = terrainIdFromCatalogId(catalogId);
-
-      const updated = { ...prev };
-      if (terrainId === null) {
-        delete updated[key];
-      } else {
-        updated[key] = terrainId;
-      }
+      const updated = applyTerrainPaint(prev, catalogId, col, row);
+      // Unchanged (repainting the same tile, erasing a bare cell, an unknown
+      // id) — skip the re-render and the write.
+      if (updated === prev) return prev;
 
       saveGardenData(undefined, updated);
       return updated;
@@ -737,44 +656,18 @@ export default function GardenScreen() {
     // with where the item actually lands.
     const hit = screenToCell(absoluteX, absoluteY, bounds, zoomScaleRef.current);
 
-    if (!hit.inside) {
+    // Clamped exactly as the drop handlers clamp, so the highlight sits on the
+    // cell the item would actually land on rather than under the finger.
+    const cell = resolveDropCell(hit, ghost);
+
+    if (!cell) {
       setDropTarget(prev => (prev === null ? prev : null));
       return;
     }
 
-    const entry = ghost.kind === 'catalog' ? ghost.entry : null;
-    const spanCols = entry?.gridWidth ?? 1;
-    const spanRows = entry?.gridHeight ?? 1;
-
-    // Clamp exactly as the drop handlers do, so the highlight sits on the cell
-    // the item would actually land on rather than under the finger.
-    const col = Math.max(0, Math.min(hit.col, COLUMNS - spanCols));
-    const row = Math.max(0, Math.min(hit.row, ROWS - spanRows));
-
-    const occupied = buildOccupancy(placedItemsRef.current);
-
-    let valid: boolean;
-    if (ghost.kind === 'can') {
-      // Only a thirsty plant can be watered — anything else is a no-op.
-      const targetId = occupied[cellKey(col, row)];
-      const target = placedItemsRef.current.find(i => i.instanceId === targetId);
-      valid = target instanceof PlantObject && target.isThirsty;
-    } else if (entry?.kind === 'terrain') {
-      // Terrain paints over whatever's there, so it's always a valid drop.
-      valid = true;
-    } else {
-      // An object being repositioned mustn't collide with the cells it's
-      // currently occupying, or every move would read as invalid.
-      const movingId = movingIdRef.current;
-
-      valid = true;
-      for (let c = 0; c < spanCols && valid; c++) {
-        for (let r = 0; r < spanRows && valid; r++) {
-          const blocker = occupied[cellKey(col + c, row + r)];
-          if (blocker && blocker !== movingId) valid = false;
-        }
-      }
-    }
+    const { col, row } = cell;
+    // movingId: an object being repositioned mustn't collide with its own cells.
+    const valid = isDropValid(ghost, placedItemsRef.current, col, row, movingIdRef.current);
 
     setDropTarget(prev =>
       prev && prev.col === col && prev.row === row && prev.valid === valid
@@ -806,53 +699,25 @@ export default function GardenScreen() {
       if (!width || !height) return;
 
       const hit = screenToCell(absoluteX, absoluteY, { pageX, pageY, width, height }, zoomScaleRef.current);
+      const cell = resolveDropCell(hit, { kind: 'catalog', entry });
+      if (!cell) return;
 
-      if (hit.inside) {
-        const ghostLogicalWidth = entry.gridWidth ?? 1;
-        const ghostLogicalHeight = entry.gridHeight ?? 1;
+      // Resolved against the ref, not the occupiedCells memo — this closure is
+      // from the render that built the gesture, so its state is stale.
+      const result = resolveCatalogDrop(entry, placedItemsRef.current, cell.col, cell.row);
 
-        const targetCol = Math.max(0, Math.min(hit.col, COLUMNS - ghostLogicalWidth));
-        const targetRow = Math.max(0, Math.min(hit.row, ROWS - ghostLogicalHeight));
-
-        if (entry.kind === 'terrain') {
-          // Terrain paints its own layer, so it never collides with what's
-          // already on the cell — planting on grass is the whole point.
-          handlePaintTerrain(entry.id, targetCol, targetRow);
-        } else {
-          // Built from the ref, not the occupiedCells memo — see the note in
-          // handleInventoryDragEnd about this closure being stale.
-          const occupied = buildOccupancy(placedItemsRef.current);
-
-          let isBlocked = false;
-          for (let c = 0; c < ghostLogicalWidth; c++) {
-            for (let r = 0; r < ghostLogicalHeight; r++) {
-              if (occupied[cellKey(targetCol + c, targetRow + r)]) {
-                isBlocked = true;
-              }
-            }
-          }
-
-          if (isBlocked) {
-            Vibration.vibrate([0, 50, 50, 50]);
-          } else {
-            setPlacedItems(prev => {
-              const instanceId = Date.now().toString();
-              // No stageStartedAt: a new plant starts thirsty and won't grow
-              // until it's watered.
-              const newItem = entry.kind === 'plant'
-                ? new PlantObject(instanceId, entry, targetCol, targetRow, {
-                    plantedAt: Date.now(),
-                    lastWateredAt: Date.now(),
-                    growthStage: 0,
-                  })
-                : new DecorationObject(instanceId, entry, targetCol, targetRow);
-
-              const updated = [...prev, newItem];
-              saveGardenData(updated);
-              return updated;
-            });
-          }
-        }
+      if (result.type === 'paint') {
+        handlePaintTerrain(result.catalogId, result.col, result.row);
+      } else if (result.type === 'blocked') {
+        Vibration.vibrate([0, 50, 50, 50]);
+      } else {
+        // A new plant has no stageStartedAt: it starts thirsty and won't grow
+        // until it's watered.
+        setPlacedItems(prev => {
+          const updated = [...prev, result.item];
+          saveGardenData(updated);
+          return updated;
+        });
       }
     });
   };

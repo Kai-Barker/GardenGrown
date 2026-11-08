@@ -13,6 +13,7 @@
    - 2.1 [Prerequisites](#21-prerequisites)
    - 2.2 [How to Install](#22-how-to-install)
    - 2.3 [Available Scripts](#23-available-scripts)
+   - 2.4 [Testing](#24-testing)
 3. [Features and Usage](#3-features-and-usage)
    - [Screenshots & Explanations](#screenshots--explanations)
 4. [Mockups](#4-mockups)
@@ -59,7 +60,7 @@ Built on Expo SDK 58 with Expo Router for file-based navigation, React Native Ge
 
 ### 2.1 Prerequisites
 
-- Node.js (v18 or newer)
+- Node.js 22.13+ or 24+ (required by the test tooling)
 - npm
 - A Firebase project with **Email/Password Authentication**, **Cloud Firestore**, and **Cloud Storage** all enabled (Storage is required for profile photos)
 - Expo CLI / React Native tooling (Android Studio or Xcode for emulators, or the Expo Go app for a physical device)
@@ -108,6 +109,35 @@ Then scan the QR code with Expo Go, or launch an Android/iOS emulator from the t
 | Script | Command | Purpose |
 |---|---|---|
 | `npx expo start` | `expo start` | Start the Expo dev server |
+| `npm test` | `jest` | Run the whole test suite |
+| `npm run test:unit` | `jest __tests__/unit` | Unit tests only |
+| `npm run test:integration` | `jest __tests__/integration` | Integration tests only |
+| `npm run test:regression` | `jest __tests__/regression` | Regression tests only |
+| `npm run test:e2e` | `jest __tests__/e2e` | End-to-end journey tests only |
+| `npm run test:coverage` | `jest --coverage` | Full suite with a coverage report (fails below the thresholds) |
+| `npm run test:watch` | `jest --watch` | Re-run affected tests on save |
+
+### 2.4 Testing
+
+The suite runs with Jest (`jest-expo` preset) and needs no device, emulator or Firebase project. Run it from the app folder with `npm test`.
+
+Tests live in `GardenGrown/GardenGrown/__tests__/`, split by type:
+
+| Folder | What it covers |
+|---|---|
+| `unit/grid/` | The grid and placement rules in `components/Garden/placement.ts`, which is the most heavily tested part of the app. Covers converting screen touches to cells (including while zoomed), clamping to the grid, collisions for 1×1 and 1×2 footprints, moving an item onto its own cells, terrain painting and erasing, watering targets, and loading saved gardens. Also covers the object model, plant growth, the catalog and grid geometry. Each rule has positive and negative cases, and a sweep over every cell checks that the drop highlight always agrees with where the item actually lands. |
+| `unit/services/` | Every function in `services/users.ts`, `services/garden.ts` and `services/onboarding.ts`, with the Firebase SDK mocked. Checks the exact calls and payloads, and that errors are passed back to the caller. |
+| `integration/` | The services, placement rules and object model working together: saving and reloading gardens, terrain, growth across reloads, garden ownership, sign-up, sign-in, renaming and password changes. |
+| `regression/` | One test for each bug the app has already had, named after the bug. Examples: placement failing while zoomed, `undefined` values breaking Firestore saves, renumbered catalog ids, and the tab bar crash after the Expo SDK 58 upgrade. |
+| `e2e/` | Complete user journeys that start from screen touches: sign up, build a garden, sign out and back in, grow a tree from seed, manage several gardens, change account settings, fill the grid, and place items while zoomed. |
+
+**Mocks only.** The tests never touch a real Firebase project. Integration and E2E tests use `__tests__/helpers/fakeFirebase.ts`, a strict in-memory fake that behaves like real Firebase where the app depends on it:
+- it rejects `undefined` values
+- `updateDoc` fails on a missing document
+- emails must be unique and passwords at least 6 characters
+- it returns Firebase's real error codes
+
+The drag gestures themselves can't run without a device. Check them by hand in Expo Go after changing `app/garden.tsx`.
 
 ---
 

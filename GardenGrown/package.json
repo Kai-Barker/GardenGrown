@@ -8,7 +8,39 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest",
+    "test:unit": "jest __tests__/unit",
+    "test:integration": "jest __tests__/integration",
+    "test:regression": "jest __tests__/regression",
+    "test:e2e": "jest __tests__/e2e",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "setupFiles": [
+      "<rootDir>/__tests__/helpers/setup.ts"
+    ],
+    "testMatch": [
+      "<rootDir>/__tests__/**/*.test.ts?(x)"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|react-native-svg|nativewind|react-native-css-interop|firebase|@firebase/.*)"
+    ],
+    "collectCoverageFrom": [
+      "services/**/*.ts",
+      "components/Garden/{placement,objects,catalog,terrain,constants,growth}.ts",
+      "components/CustomTabBar.tsx"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 90,
+        "branches": 85,
+        "functions": 90,
+        "statements": 90
+      }
+    }
   },
   "dependencies": {
     "@expo-google-fonts/zen-loop": "^0.4.2",
@@ -48,9 +80,14 @@
     "@babel/plugin-transform-class-properties": "^7.29.7",
     "@babel/plugin-transform-private-methods": "^7.29.7",
     "@babel/plugin-transform-private-property-in-object": "^7.29.7",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
+    "test-renderer": "~1.3.1",
     "typescript": "~6.0.3"
   },
   "private": true
